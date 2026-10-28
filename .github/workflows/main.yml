@@ -102,6 +102,10 @@ on:
         description: "Disable SUSFS"
         type: boolean
         default: false
+      supp_op:
+        description: "Enable OnePlus 8E support"
+        type: boolean
+        default: false
 
       # ==================== 构建版本选择 ====================
       build_target:
@@ -246,7 +250,7 @@ jobs:
       use_bbg: ${{ inputs.use_bbg }}
       use_rekernel: ${{ inputs.use_rekernel || false }}
       cve_2026_43499_patch: ${{ inputs.cve_2026_43499_patch }}
-      supp_op: false
+      supp_op: ${{ inputs.supp_op }}
       enable_susfs: ${{ !inputs.cancel_susfs }}
       droidspaces: ${{ inputs.droidspaces || 'off' }}
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync || false }}
@@ -257,9 +261,11 @@ jobs:
   build-a12-5-10:
     if: ${{ !inputs.build_kernel_version && (inputs.build_target == 'android12-5.10' || inputs.build_target == 'all') }}
     needs: resolve-ksu-ref
-    uses: ./.github/workflows/kernel-a12-5-10.yml
+    uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
+      data_file: data/android12/5.10.json
+      deduplicate_sublevels: false
       clean_build: ${{ inputs.clean_build }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
       version: ${{ inputs.version }}
@@ -269,6 +275,7 @@ jobs:
       use_rekernel: ${{ inputs.use_rekernel }}
       cve_2026_43499_patch: ${{ inputs.cve_2026_43499_patch }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
+      supp_op: ${{ inputs.supp_op }}
       droidspaces: ${{ inputs.droidspaces }}
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
       use_nomount: ${{ inputs.use_nomount }}
@@ -278,9 +285,11 @@ jobs:
   build-a13-5-10:
     if: ${{ !inputs.build_kernel_version && (inputs.build_target == 'android13-5.10' || inputs.build_target == 'all') }}
     needs: resolve-ksu-ref
-    uses: ./.github/workflows/kernel-a13-5-10.yml
+    uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
+      data_file: data/android13/5.10.json
+      deduplicate_sublevels: false
       clean_build: ${{ inputs.clean_build }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
       version: ${{ inputs.version }}
@@ -290,6 +299,7 @@ jobs:
       use_rekernel: ${{ inputs.use_rekernel }}
       cve_2026_43499_patch: ${{ inputs.cve_2026_43499_patch }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
+      supp_op: ${{ inputs.supp_op }}
       droidspaces: ${{ inputs.droidspaces }}
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
       use_nomount: ${{ inputs.use_nomount }}
@@ -299,9 +309,11 @@ jobs:
   build-a13-5-15:
     if: ${{ !inputs.build_kernel_version && (inputs.build_target == 'android13-5.15' || inputs.build_target == 'all') }}
     needs: resolve-ksu-ref
-    uses: ./.github/workflows/kernel-a13-5-15.yml
+    uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
+      data_file: data/android13/5.15.json
+      deduplicate_sublevels: true
       clean_build: ${{ inputs.clean_build }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
       version: ${{ inputs.version }}
@@ -311,6 +323,7 @@ jobs:
       use_rekernel: ${{ inputs.use_rekernel }}
       cve_2026_43499_patch: ${{ inputs.cve_2026_43499_patch }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
+      supp_op: ${{ inputs.supp_op }}
       droidspaces: ${{ inputs.droidspaces }}
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
       use_nomount: ${{ inputs.use_nomount }}
@@ -320,10 +333,11 @@ jobs:
   build-a14-5-15:
     if: ${{ !inputs.build_kernel_version && (inputs.build_target == 'android14-5.15' || inputs.build_target == 'all') }}
     needs: resolve-ksu-ref
-    uses: ./.github/workflows/kernel-a13-5-15.yml
+    uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
-      android_version: android14
+      data_file: data/android14/5.15.json
+      deduplicate_sublevels: true
       clean_build: ${{ inputs.clean_build }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
       version: ${{ inputs.version }}
@@ -333,6 +347,7 @@ jobs:
       use_rekernel: ${{ inputs.use_rekernel }}
       cve_2026_43499_patch: ${{ inputs.cve_2026_43499_patch }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
+      supp_op: ${{ inputs.supp_op }}
       droidspaces: ${{ inputs.droidspaces }}
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
       use_nomount: ${{ inputs.use_nomount }}
@@ -342,9 +357,11 @@ jobs:
   build-a14-6-1:
     if: ${{ !inputs.build_kernel_version && (inputs.build_target == 'android14-6.1' || inputs.build_target == 'all') }}
     needs: resolve-ksu-ref
-    uses: ./.github/workflows/kernel-a14-6-1.yml
+    uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
+      data_file: data/android14/6.1.json
+      deduplicate_sublevels: true
       clean_build: ${{ inputs.clean_build }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
       version: ${{ inputs.version }}
@@ -354,6 +371,7 @@ jobs:
       use_rekernel: ${{ inputs.use_rekernel }}
       cve_2026_43499_patch: ${{ inputs.cve_2026_43499_patch }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
+      supp_op: ${{ inputs.supp_op }}
       droidspaces: ${{ inputs.droidspaces }}
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
       use_nomount: ${{ inputs.use_nomount }}
@@ -363,9 +381,11 @@ jobs:
   build-a15-6-6:
     if: ${{ !inputs.build_kernel_version && (inputs.build_target == 'android15-6.6' || inputs.build_target == 'all') }}
     needs: resolve-ksu-ref
-    uses: ./.github/workflows/kernel-a15-6-6.yml
+    uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
+      data_file: data/android15/6.6.json
+      deduplicate_sublevels: true
       clean_build: ${{ inputs.clean_build }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
       version: ${{ inputs.version }}
@@ -375,6 +395,7 @@ jobs:
       use_rekernel: ${{ inputs.use_rekernel }}
       cve_2026_43499_patch: ${{ inputs.cve_2026_43499_patch }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
+      supp_op: ${{ inputs.supp_op }}
       droidspaces: ${{ inputs.droidspaces }}
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
       use_nomount: ${{ inputs.use_nomount }}
@@ -384,9 +405,11 @@ jobs:
   build-a16-6-12:
     if: ${{ !inputs.build_kernel_version && (inputs.build_target == 'android16-6.12' || inputs.build_target == 'all') }}
     needs: resolve-ksu-ref
-    uses: ./.github/workflows/kernel-a16-6-12.yml
+    uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
+      data_file: data/android16/6.12.json
+      deduplicate_sublevels: true
       clean_build: ${{ inputs.clean_build }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
       version: ${{ inputs.version }}
@@ -396,6 +419,7 @@ jobs:
       use_rekernel: ${{ inputs.use_rekernel }}
       cve_2026_43499_patch: ${{ inputs.cve_2026_43499_patch }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
+      supp_op: ${{ inputs.supp_op }}
       droidspaces: ${{ inputs.droidspaces }}
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
       use_nomount: ${{ inputs.use_nomount }}
@@ -405,9 +429,11 @@ jobs:
   build-a17-6-18:
     if: ${{ !inputs.build_kernel_version && (inputs.build_target == 'android17-6.18' || inputs.build_target == 'all') }}
     needs: resolve-ksu-ref
-    uses: ./.github/workflows/kernel-a17-6-18.yml
+    uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
+      data_file: data/android17/6.18.json
+      deduplicate_sublevels: true
       clean_build: ${{ inputs.clean_build }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
       version: ${{ inputs.version }}
@@ -417,6 +443,7 @@ jobs:
       use_rekernel: ${{ inputs.use_rekernel }}
       cve_2026_43499_patch: ${{ inputs.cve_2026_43499_patch }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
+      supp_op: ${{ inputs.supp_op }}
       droidspaces: ${{ inputs.droidspaces }}
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
       use_nomount: ${{ inputs.use_nomount }}

@@ -77,9 +77,8 @@ Examples:
 | Build **one exact kernel version** for your phone (recommended) | **Build GKI Kernels** + version filter (full version) | 1 |
 | Build **every patch version** for one KMI | **Build GKI Kernels** + `build_target` | Many |
 | Pick a **specific patch month / revision** | **Build Custom Android Kernel** | 1 |
-| Build the whole matrix for one KMI with a fixed workflow | **Build Kernel - ...** | Many |
 
-The first three options are explained below. The fixed workflows are listed in [Workflow reference](#workflow-reference).
+These three options are explained below.
 
 ## Option A: build one exact kernel version (recommended)
 
@@ -129,7 +128,6 @@ Use this when:
 
 - the same 5.10 / 5.15 sublevel has multiple revisions and you need a specific one;
 - you know the exact `date` (patch month) you need;
-- you want to enable OnePlus 8E (`supp_op`) in a custom build;
 - you want `sub_level` to be `X` and follow the current source of the selected branch.
 
 This uses **Build Custom Android Kernel**. It builds one combination per run and does not create a Release.
@@ -230,7 +228,7 @@ If the phone does not boot, restore the boot image you backed up and do not keep
 | Input | Default | In one sentence | When to enable / notes |
 |---|---|---|---|
 | `cancel_susfs` | `false` | Checking it **disables** SUSFS | Leave it unchecked to keep SUSFS. Clean builds and 6.18 skip SUSFS. |
-| `use_zram` | `false` | Enhanced ZRAM / LZ4KD algorithms | Enable only if you want the ZRAM enhancements. In `build_target` mode and the fixed 6.12 workflow it is forced off; 6.18 skips it. |
+| `use_zram` | `false` | Enhanced ZRAM / LZ4KD algorithms | Enable only if you want the ZRAM enhancements. When building 6.12 via `build_target` it is forced off; 6.18 skips it. |
 | `use_bbg` | `false` | BBG anti-brick patch | Enable only if needed; not every device requires it. |
 | `use_rekernel` | `false` | Experimental Re-Kernel drivers | Usually unnecessary; 6.18 skips it. |
 | `cve_2026_43499_patch` | `true` | Applies the CVE-2026-43499 fix series | Recommended to keep on; 6.18 skips it. |
@@ -238,37 +236,30 @@ If the phone does not boot, restore the boot image you backed up and do not keep
 | `droidspaces_ntsync` | `false` | Adds NTSync to Droidspaces | Requires Droidspaces to be enabled. Supported: Android 12/5.10, 13/5.15, 14/6.1, 15/6.6, 16/6.12. Android 14/5.15 fails; Android 13/5.10 and 17/6.18 skip it. |
 | `build_bypass` | `false` | Builds an extra Image with relaxed kernel module version checks | Significantly increases build time. It is for diagnosing module compatibility, **not for hiding root**. |
 | `use_nomount` | `false` | NoMount mount support | Also requires the separate [NoMount module](https://github.com/maxsteeel/nomount). Clean builds skip it. |
-| `supp_op` | `false` | OnePlus 8E support | The main workflow does not expose it. Use the custom workflow or a fixed workflow that has the switch; 6.18 skips it. |
+| `supp_op` | `false` | OnePlus 8E support | Both the main and custom workflows expose it; 6.18 skips it. |
 
 > **Android 17 / 6.18 automatically skips:** SUSFS, ZRAM/LZ4KD, NTSync, Re-Kernel, OnePlus 8E, and the CVE-2026-43499 fix series. BBG and Droidspaces remain available. The "build information summary" at the start of each build log lists the features that are actually enabled.
 
-> **Android 16 / 6.12 and ZRAM:** in `build_target` mode and the fixed 6.12 workflow, ZRAM is forced off; 6.18 skips it. Keeping it off is recommended for 6.12.
+> **Android 16 / 6.12 and ZRAM:** when building 6.12 via `build_target`, ZRAM is forced off; 6.18 skips it. Keeping it off is recommended for 6.12.
 
 ## Workflow reference
 
-| Workflow | Manual run? | What it builds |
+| Workflow | Manual run? | What it does |
 |---|---|---|
-| **Build GKI Kernels** | Yes | Recommended entry point. Builds the full matrix for one KMI, or one version with the version filter. |
+| **Build GKI Kernels** | Yes | Recommended entry point. Build one version with the version filter, or pick one KMI with `build_target` and build its full matrix. |
 | **Build Custom Android Kernel** | Yes | One exact combination from the form (patch month / revision). |
-| **Build Kernel - Android 12 (5.10)** | Yes | The full Android 12 / 5.10 version matrix. |
-| **Build Kernel - 5.15 (Android 13/14)** | Yes, but only Android 13 / 5.15 | The full 5.15 version matrix. A manual run cannot select Android 14; use the main or custom workflow for Android 14 / 5.15. |
-| **Build Kernel - Android 14 (6.1)** | Yes | The full Android 14 / 6.1 version matrix. |
-| **Build Kernel - Android 15 (6.6)** | Yes | The full Android 15 / 6.6 version matrix. |
-| **Build Kernel - Android 16 (6.12)** | Yes | The full Android 16 / 6.12 version matrix. |
-| **Build Kernel - Android 17 (6.18)** | Yes | The full Android 17 / 6.18 version matrix. |
+| **Update GKI Version Data** | Yes (also runs weekly) | Syncs the GKI version data under `data/`; it does not build kernels. |
 
 Notes:
 
-- **Build Kernel - Android 13 (5.10)** has no manual button. Use **Build GKI Kernels** and select `android13-5.10`.
-- Fixed-KMI workflows build multiple patch versions per run; they cannot build just one. For one version, use Option A or C.
-- **Prepare GKI Build Matrix** and **Kernel Build Progress** are internal reusable workflows and do not need to be run directly.
-- **Send Telegram Bot Notification** only sends notifications. **Emergency Release Cleanup** is for the repository owner to clean up releases. **Update GKI Version Data** syncs version data. None of them are build entry points.
-- Fixed-KMI and custom workflows only produce Artifacts; they do not create a Release.
+- Full-KMI builds now go through **Build GKI Kernels** and `build_target`; there are no separate fixed-KMI entries. `build_target` accepts one KMI per run.
+- **Prepare GKI Build Matrix**, **Build KMI Matrix**, and **Kernel Build Progress** are internal workflows called by the main workflow. They do not need to be run directly and do not appear in the manual workflow list.
+- Only **Build GKI Kernels** can create a Release, and only in the release repository with the version filter off. The custom workflow only produces Artifacts.
 
 ## Troubleshooting
 
 **The workflow is missing from Actions, or there is no Run workflow button.**  
-Make sure Actions is enabled in your fork and the default branch contains the files under `.github/workflows/`. **Build Kernel - Android 13 (5.10)** has no manual button by design.
+Make sure Actions is enabled in your fork and the default branch contains the files under `.github/workflows/`. Only **Build GKI Kernels** and **Build Custom Android Kernel** are manual build entry points; the rest are internal workflows or data sync.
 
 **I only wanted one version, but many jobs started.**  
 You probably used `build_target` mode, which builds every patch version for that KMI. Use the version filter in Option A instead.

@@ -77,9 +77,8 @@ KMI 可以理解成 **Android 版本 + 内核系列**，例如 `android15-6.6`�
 | 只编当前设备的**一个**内核版本（推荐） | **Build GKI Kernels** + 版本筛选（填完整版本） | 1 个 |
 | 把一个 KMI 的**所有补丁版本**都编出来 | **Build GKI Kernels** + `build_target` | 很多个 |
 | 指定**补丁月份 / revision** | **Build Custom Android Kernel** | 1 个 |
-| 用固定工作流编某个 KMI 的整个矩阵 | **Build Kernel - ...** | 很多个 |
 
-下面分别说明前三种；固定工作流见后面的[工作流清单](#工作流清单)。
+下面分别说明这三种。
 
 ## 方式 A：只编一个内核版本（推荐）
 
@@ -129,7 +128,6 @@ KMI 可以理解成 **Android 版本 + 内核系列**，例如 `android15-6.6`�
 
 - 5.10 / 5.15 的同一个子版本有多个 revision，你要指定其中一个；
 - 你知道自己需要某个特定的 `date`（补丁月份）；
-- 你想在自定义构建里额外开一加 8E（`supp_op`）；
 - 你想让 `sub_level` 填 `X`，跟随所选分支的当前源码。
 
 这个方式用 **Build Custom Android Kernel**，每次只编一个组合，不会创建 Release。
@@ -230,7 +228,7 @@ GitHub 的 **Artifacts 下载下来是一个 ZIP**；只解压这一层，里面
 | 参数 | 默认 | 一句话说明 | 什么时候开 / 注意 |
 |---|---|---|---|
 | `cancel_susfs` | `false` | 勾选表示**关闭** SUSFS | 不勾才有 SUSFS；clean build 和 6.18 会跳过 |
-| `use_zram` | `false` | 增强 ZRAM / LZ4KD 算法 | 想要 ZRAM 增强才开；6.12 的 `build_target` 和固定工作流会强制关闭；6.18 自动跳过 |
+| `use_zram` | `false` | 增强 ZRAM / LZ4KD 算法 | 想要 ZRAM 增强才开；6.12 通过 `build_target` 构建时会强制关闭；6.18 自动跳过 |
 | `use_bbg` | `false` | BBG 防格机补丁 | 按需开；不是所有设备都需要 |
 | `use_rekernel` | `false` | 实验性 Re-Kernel 驱动 | 一般不用；6.18 自动跳过 |
 | `cve_2026_43499_patch` | `true` | 应用 CVE-2026-43499 修复链 | 建议保持开启；6.18 自动跳过 |
@@ -238,37 +236,30 @@ GitHub 的 **Artifacts 下载下来是一个 ZIP**；只解压这一层，里面
 | `droidspaces_ntsync` | `false` | 给 Droidspaces 加 NTSync | 必须先开 Droidspaces。支持 Android 12/5.10、13/5.15、14/6.1、15/6.6、16/6.12；Android 14/5.15 会失败；Android 13/5.10 和 17/6.18 会跳过 |
 | `build_bypass` | `false` | 额外编一个放宽内核模块版本校验的 Image | 会明显增加构建时间；用于诊断模块兼容性，**不是隐藏 root** |
 | `use_nomount` | `false` | NoMount 挂载支持 | 还需要单独安装配套的 [NoMount 模块](https://github.com/maxsteeel/nomount)；clean build 跳过 |
-| `supp_op` | `false` | 一加 8E（OnePlus 8E）支持 | 主工作流没有这个开关；用自定义工作流，或带此开关的固定工作流；6.18 自动跳过 |
+| `supp_op` | `false` | 一加 8E（OnePlus 8E）支持 | 主工作流和自定义工作流都有这个开关；6.18 自动跳过 |
 
 > **Android 17 / 6.18 会自动跳过：** SUSFS、ZRAM/LZ4KD、NTSync、Re-Kernel、一加 8E 和 CVE-2026-43499 修复链。BBG 和 Droidspaces 仍可用。构建日志开头的“构建信息摘要”会列出实际启用的功能。
 
-> **Android 16 / 6.12 的 ZRAM：** 通过 `build_target` 或固定 6.12 工作流构建时，ZRAM 会被强制关闭；6.18 自动跳过。6.12 建议保持关闭。
+> **Android 16 / 6.12 的 ZRAM：** 通过 `build_target` 构建 6.12 时，ZRAM 会被强制关闭；6.18 自动跳过。6.12 建议保持关闭。
 
 ## 工作流清单
 
-| 工作流 | 手动可运行？ | 构建什么 |
+| 工作流 | 手动可运行？ | 做什么 |
 |---|---|---|
-| **Build GKI Kernels** | 可以 | 推荐入口。选一个 KMI 编整个矩阵，或用版本筛选只编一个版本。 |
+| **Build GKI Kernels** | 可以 | 推荐入口。用版本筛选只编一个版本，或用 `build_target` 选一个 KMI 编整个矩阵。 |
 | **Build Custom Android Kernel** | 可以 | 按表单构建一个精确组合（补丁月份 / revision）。 |
-| **Build Kernel - Android 12 (5.10)** | 可以 | Android 12 / 5.10 的完整版本矩阵。 |
-| **Build Kernel - 5.15 (Android 13/14)** | 可以，但只编 Android 13 / 5.15 | 5.15 的完整版本矩阵。手动运行时不能选 Android 14；Android 14 / 5.15 请用主工作流或自定义工作流。 |
-| **Build Kernel - Android 14 (6.1)** | 可以 | Android 14 / 6.1 的完整版本矩阵。 |
-| **Build Kernel - Android 15 (6.6)** | 可以 | Android 15 / 6.6 的完整版本矩阵。 |
-| **Build Kernel - Android 16 (6.12)** | 可以 | Android 16 / 6.12 的完整版本矩阵。 |
-| **Build Kernel - Android 17 (6.18)** | 可以 | Android 17 / 6.18 的完整版本矩阵。 |
+| **Update GKI Version Data** | 可以（也会每周自动运行） | 同步 `data/` 下的 GKI 版本数据，不构建内核。 |
 
 补充说明：
 
-- **Build Kernel - Android 13 (5.10)** 没有手动按钮，请用 **Build GKI Kernels** 选 `android13-5.10`。
-- 固定 KMI 工作流每次会编该 KMI 的多个补丁版本，不能只编一个；只编一个请用方式 A 或 C。
-- **Prepare GKI Build Matrix** 和 **Kernel Build Progress** 是被其他工作流调用的内部流程，不需要直接运行。
-- **Send Telegram Bot Notification** 只发通知；**Emergency Release Cleanup** 仅仓库所有者处理发布清理；**Update GKI Version Data** 用于同步版本数据。它们都不是构建入口。
-- 固定 KMI 工作流和自定义工作流只产出 Artifacts，不创建 Release。
+- 整个 KMI 的矩阵统一用 **Build GKI Kernels** 的 `build_target`，没有单独的固定 KMI 入口了；`build_target` 一次只能选一个 KMI。
+- **Prepare GKI Build Matrix**、**Build KMI Matrix** 和 **Kernel Build Progress** 是被主工作流调用的内部流程，不需要直接运行，也不会出现在可手动运行的工作流列表里。
+- 只有 **Build GKI Kernels** 在发布仓库且未启用版本筛选时可能创建 Release；自定义工作流只产出 Artifacts。
 
 ## 常见问题
 
 **Actions 里看不到工作流，或没有 Run workflow 按钮？**  
-确认 fork 已经启用 Actions，并且默认分支里有 `.github/workflows/` 下的文件。`Build Kernel - Android 13 (5.10)` 本来就没有手动按钮。
+确认 fork 已经启用 Actions，并且默认分支里有 `.github/workflows/` 下的文件。只有 **Build GKI Kernels** 和 **Build Custom Android Kernel** 是手动构建入口，其余是内部流程或数据同步。
 
 **我只想编一个版本，为什么跑了一堆？**  
 你可能用了 `build_target` 模式，它会编该 KMI 的所有补丁版本。改用方式 A 的版本筛选。
