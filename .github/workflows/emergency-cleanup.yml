@@ -8,11 +8,11 @@ on:
   workflow_dispatch:
     inputs:
       target_tag:
-        description: '目标发布标签 (Target Release Tag)'
+        description: 'Target release tag'
         required: true
         type: string
       issue_type:
-        description: '问题类型 (Issue Type)'
+        description: 'Issue type'
         required: true
         type: choice
         options:
@@ -20,7 +20,7 @@ on:
           - Bug
           - Critical
       reference:
-        description: '问题链接或说明 (Issue link or description, optional)'
+        description: 'Issue link or description (optional)'
         required: false
         type: string
 

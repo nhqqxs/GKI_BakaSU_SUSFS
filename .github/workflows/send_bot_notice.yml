@@ -1,4 +1,4 @@
-name: 发送 Telegram 机器人通知
+name: Send Telegram Bot Notification
 permissions:
   contents: read
   actions: read
@@ -7,12 +7,12 @@ on:
     inputs:
       # ==================== Bot-Push 选项 ====================
       msg_type:
-        description: "通知类型"
+        description: "Notification type"
         type: string  # 原boolean不合理，改为字符串支持自定义类型
         default: "notice"
         required: true
       content:
-        description: "通知内容"
+        description: "Notification content"
         type: string
         default: ""
         required: true
