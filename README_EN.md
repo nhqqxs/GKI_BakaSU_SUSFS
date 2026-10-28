@@ -2,7 +2,7 @@
 
 # GKI BakaSU SUSFS
 
-Build Android GKI kernels with BakaSU and SUSFS through GitHub Actions.
+Build Android GKI kernels in the cloud with GitHub Actions. The default build includes **BakaSU** (root) and **SUSFS** (hides root traces).
 
 [简体中文](README.md) / English
 
@@ -14,147 +14,315 @@ Build Android GKI kernels with BakaSU and SUSFS through GitHub Actions.
 
 </div>
 
-## Overview
+> **First things first:** the output is a flashable **AnyKernel3 kernel ZIP**, not a ROM or a full firmware package. Flashing the wrong kernel can prevent your phone from booting. Back up your current boot image and make sure you know how to restore it before flashing.
+>
+> **In a hurry?** Fork → Actions → Build GKI Kernels → check `build_kernel_version`, enter your full kernel version (for example `6.6.92`; for 5.10/5.15 also choose `kernel_android_version`), clear `build_time` → Run. Download from Artifacts when it finishes. If this is your first time, read the KMI section and the five mistakes below first.
 
-This repository provides GitHub Actions workflows that generate AnyKernel3 installation packages for Android GKI kernel module interfaces (KMIs) and security patch levels. Regular builds use BakaSU and can include other optional features configured in the workflow. You can also select a clean build to produce a kernel without KernelSU, SUSFS, or optional feature patches.
+## Six terms in plain English
 
-Kernel versions and release revisions are read from the JSON matrices under `data/android*/` and updated periodically by the data synchronization workflow.
+| Term | What it means |
+|---|---|
+| **GKI** | Google's Generic Kernel Image. It is what this project builds. |
+| **KMI** | Kernel Module Interface: the compatibility level between the kernel and your phone's vendor modules. A wrong KMI can break the camera or Wi-Fi, or stop the phone from booting. |
+| **BakaSU** | A KernelSU fork that provides root. |
+| **SUSFS** | Kernel patches that hide root and filesystem traces. It does not guarantee passing every detection. |
+| **AnyKernel3** | A flashable kernel ZIP format. This is the actual output, not a `boot.img`. |
+| **Artifacts** | Files produced by an Actions run. GitHub wraps them in an outer ZIP, so you need to extract that layer first. |
 
-## Important Notice
+## Before you start: identify your KMI (most important)
 
-To limit prolonged use of shared GitHub Actions resources, maintainers no longer run and publish every KMI regularly or rebuild all versions after each major BakaSU update. Fork this repository and build only the KMI or kernel version your device needs. The instructions below walk through choosing a workflow, filling in its inputs, and downloading the result.
+A KMI is the combination of an **Android version and a kernel series**, for example `android15-6.6`. Your build target must match the KMI your phone actually uses.
 
-## Supported KMIs
+**Do not choose by the Android version alone.** An Android 14 phone may run kernel 5.15 or 6.1, and Android 13 and Android 14 phones can both run a 5.15.x kernel. The reliable clue is the `androidXX` tag and the `5.xx` / `6.xx` series in the kernel version string.
 
-| Android KMI | Kernel Series | `build_target` in **Build GKI Kernels** |
+How to check:
+
+1. On the phone: **Settings → About phone → Kernel version**;
+2. Or run `uname -r` in a terminal or through adb;
+3. Or ask the ROM / device maintainer.
+
+| Android version | Kernel series | Common tag in the kernel version | `build_target` in the main workflow |
+|---|---|---|---|
+| Android 12 | 5.10 | `android12` | `android12-5.10` |
+| Android 13 | 5.10 | `android13` | `android13-5.10` |
+| Android 13 | 5.15 | `android13` | `android13-5.15` |
+| Android 14 | 5.15 | `android14` | `android14-5.15` |
+| Android 14 | 6.1 | `android14` | `android14-6.1` |
+| Android 15 | 6.6 | `android15` | `android15-6.6` |
+| Android 16 | 6.12 | `android16` | `android16-6.12` |
+| Android 17 | 6.18 | `android17` | `android17-6.18` |
+
+Examples:
+
+- `5.15.94-android13-8-g...` → series 5.15, Android 13 → `android13-5.15`
+- `5.15.110-android14-11-...` → series 5.15, Android 14 → `android14-5.15`
+- `6.6.92-android15-8-...` → series 6.6, Android 15 → `android15-6.6`
+
+> **Note:** both 5.10 and 5.15 map to two different Android KMIs. `5.15.xxx` alone cannot tell you whether the device is Android 13 or 14; look at the `androidXX` part. If a third-party kernel removed that tag, ask the ROM / device maintainer instead of guessing.
+
+## Five common mistakes
+
+| Mistake | What happens | What to do instead |
 |---|---|---|
-| Android 12 | 5.10 | `android12-5.10` |
-| Android 13 | 5.10 | `android13-5.10` |
-| Android 13 | 5.15 | `android13-5.15` |
-| Android 14 | 5.15 | `android14-5.15` |
-| Android 14 | 6.1 | `android14-6.1` |
-| Android 15 | 6.6 | `android15-6.6` |
-| Android 16 | 6.12 | `android16-6.12` |
-| Android 17 | 6.18 | `android17-6.18` |
+| Leaving `build_target: all` | It expands to every KMI. That is well over a hundred jobs and takes a long time. | For one phone, pick one KMI, or use the version filter below. |
+| Not changing `build_time` | The form is prefilled with `Sun Dec 01 08:10:00 UTC 2024`; leaving it unchanged writes that fixed timestamp into the kernel. | Clear the field, or enter `N` to use the current UTC time at run time. |
+| Not clearing `revision` in a custom build | The form defaults to `r11`. If the JSON entry has no revision, the build looks for a tag that does not exist and usually fails. | Clear `revision` when the JSON entry has none; otherwise enter the exact value. |
+| Checking `clean_build` | The build skips BakaSU and SUSFS, so the result has no root. It is not "cleaner" or "more stable"; it simply has no root. | Leave it unchecked if you want root. |
+| Starting another run on the same branch | A new `Build GKI Kernels` run cancels the run that is still in progress. | Wait for the current run to finish, or use another branch. |
 
-Both 5.10 and 5.15 correspond to multiple Android KMIs. In particular, Android 13 and Android 14 on 5.15 can have identical kernel version numbers, so the KMI cannot be determined from `5.15.xxx` alone. Confirm both the device's Android KMI and kernel series instead of choosing based only on the Android OS version. Android 17 / 6.18 supports basic builds; some auxiliary components are skipped automatically according to upstream support.
+## Three ways to build: pick one
 
-## Confirm Your Device KMI First
+| What you want | Where to go | Jobs produced |
+|---|---|---|
+| Build **one exact kernel version** for your phone (recommended) | **Build GKI Kernels** + version filter (full version) | 1 |
+| Build **every patch version** for one KMI | **Build GKI Kernels** + `build_target` | Many |
+| Pick a **specific patch month / revision** | **Build Custom Android Kernel** | 1 |
+| Build the whole matrix for one KMI with a fixed workflow | **Build Kernel - ...** | Many |
 
-The build target must match the Android KMI and kernel series actually used by your device. Confirm it from the device kernel version, ROM/device maintainer information, or the KMI identifier in the current kernel. The `build_target` values in the table above can be selected directly in the main workflow.
+The first three options are explained below. The fixed workflows are listed in [Workflow reference](#workflow-reference).
 
-## Choose a Workflow
+## Option A: build one exact kernel version (recommended)
 
-For most users, start with **Build GKI Kernels**. It can build a KMI version matrix or filter that matrix by kernel sublevel.
+Use this if you know your full kernel version, for example `uname -r` shows `6.6.92`, and you only want that version.
 
-| Workflow in Actions | Purpose and behavior |
-|---|---|
-| **Build GKI Kernels** | Recommended entry point. Selecting one KMI builds the full set of security-patch versions in that KMI's data matrix, including LTS; it does not build just one kernel. `all` expands to every KMI and can start a very large number of jobs, so do not use it for a single device. |
-| **Build Custom Android Kernel** | Manually enter Android/KMI, sublevel, OS patch level, and optional revision to build one specified combination. Use it when you need to select an exact patch level or revision. |
-| **Build Kernel - Android 12 (5.10)** | Directly builds the full Android 12 / 5.10 version matrix. |
-| **Build Kernel - 5.15 (Android 13/14)** | When manually dispatched from Actions, this uses its default Android 13 / 5.15 setting and builds the full matrix. `android_version` is only passed when another workflow calls it, so a manual run cannot select Android 14. Use the main or custom workflow for Android 14 / 5.15. |
-| **Build Kernel - Android 14 (6.1)**, **Android 15 (6.6)**, **Android 16 (6.12)**, **Android 17 (6.18)** | Each builds the full version matrix for its KMI. |
+1. **Fork this repository.** Click **Fork** in the top-right corner and work in your own fork. This avoids occupying the upstream build queue.
+2. **Open the workflow.** Go to **Actions** in your fork. If GitHub asks you to enable workflows, enable them first. Select **Build GKI Kernels** on the left, then click **Run workflow**.
+3. **Fill in the form as follows.**
 
-These fixed-KMI workflows build multiple patch versions per run. Android 13 / 5.10 has no separate manually-triggerable workflow; run it through **Build GKI Kernels**. **Build Custom Android Kernel** is the manual single-version entry point. **Prepare GKI Build Matrix** and the kernel compilation workflow are reusable internal workflows and do not need to be run directly.
+| Field | What to enter | Example (device kernel 6.6.92) |
+|---|---|---|
+| `build_kernel_version` | Check it (true) to use the version filter | Checked |
+| `kernel_version_filter` | The full kernel version | `6.6.92` |
+| `kernel_android_version` | For 6.x choose `auto`; for 5.10 choose `android12` / `android13`; for 5.15 choose `android13` / `android14` | `auto` |
+| `build_target` | Ignored in this mode; leaving the default `all` will not build everything | `all` |
+| `build_time` | Clear it, or enter `N` | Empty |
+| `release_type` | Keep `Actions` in a fork | `Actions` |
+| Other feature switches | Keep the defaults for the first build | Defaults |
 
-Matrices come from the matching JSON file under `data/`. For 5.10, separate monthly entries are retained; for 5.15 and 6.x, duplicate kernel sublevels are reduced to the first monthly entry in the data. An LTS entry is also included when present. As a result, selecting one KMI can still produce many jobs and Artifacts.
+4. **Click Run workflow.** This mode produces **exactly one job**, usually named like `6.6.92-android15-2025-07`.
+5. **Download the output.** When the run finishes, open **Artifacts** at the bottom of the run page and download `BakaSU_kernel-...`. Extract the outer ZIP and flash the `...-AnyKernel3.zip` inside. See [After the build](#after-the-build-download-extract-flash).
 
-## Run the Main Workflow Step by Step
+> **Why can `build_target` be ignored?** Once `build_kernel_version` is checked, the main workflow takes the version-filter path and does not use `build_target`. Leaving it at `all` will not trigger a full build.
 
-1. **Fork the repository.** Click **Fork** on GitHub and build in your fork instead of running versions you do not need. Open **Actions** in your fork and enable Actions if GitHub prompts you to do so.
-2. **Open the workflow.** Select **Build GKI Kernels** from the left side and click **Run workflow**. The workflow file must exist on the default branch to appear; choose the branch you want to run, usually `main`, from the branch selector.
-3. **Choose the build scope.** For one device, do not leave the default `build_target: all`. Select one target from the table above; this still builds that KMI's full patch-version matrix. To build only a selected sublevel, use the version-filter mode below.
-4. **Set optional features.** For the first run, keep the feature defaults and change only the target and options you actually need. See the parameter tables below.
-5. **Start and monitor.** Click **Run workflow** at the bottom of the form. On the run page, each version in the matrix appears as a separate job. Other matrix jobs continue if one job fails.
-6. **Download the output.** After the run completes, download the appropriate target from **Artifacts** on the run summary page. If a job fails, open it and inspect the failed step and logs.
+If you see `kernel version not found in JSON`, the `data/` files do not contain that sublevel yet. Build the whole series with `6.6.X`, or wait for the weekly data sync. Do not guess a version that is not in the data.
 
-### Build a Selected Kernel Sublevel
+If the same sublevel appears more than once in the JSON (common on 5.10 / 5.15), the filter uses the **first** record. To select a later patch month or a specific revision, use Option C.
 
-In the **Build GKI Kernels** form:
+## Option B: build every patch version for one KMI
 
-1. Set `build_kernel_version` to `true`.
-2. Enter a full kernel version in `kernel_version_filter`, such as `6.6.92`. Enter `6.6.X` or `6.6.x` to select the 6.6 version matrix for that KMI.
-3. For 5.10, `kernel_android_version` must be `android12` or `android13`. For 5.15, it must be `android13` or `android14`. Versions 6.1, 6.6, 6.12, and 6.18 map automatically to Android 14, 15, 16, and 17 respectively.
-4. This mode uses the version filter and ignores `build_target`. Do not leave `kernel_version_filter` empty.
+Use this if you are not sure which sublevel you want, or you want several kernels for one KMI in one go.
 
-A full-version filter matches by kernel sublevel and uses the first matching monthly record in the data matrix; it is not a field for choosing any security-patch month. If the same sublevel appears in multiple months, this filter cannot select a later month. Patch level, revision, and LTS information come from the corresponding JSON file under [data](data/). `X` expands to multiple matrix jobs and may still take considerable build time. This filtered mode does not create a Release.
+1. Fork this repository, then open **Actions → Build GKI Kernels → Run workflow**.
+2. Set `build_target` to your KMI (see the table above). Clear `build_time` or enter `N`. Leave the other fields at their defaults.
+3. Click **Run workflow**.
+4. When it finishes, download the packages you need from **Artifacts**.
 
-## Form Parameters
+> **Do not choose `all`.** It expands every KMI and currently produces well over a hundred jobs. For one phone, one KMI is enough.
 
-### Target, Release, and BakaSU
+Each patch version is a separate job, and the jobs do not depend on each other. If one fails, the others continue. The 5.10 matrix keeps every monthly record, so it produces more jobs; 5.15 and 6.x keep only the first record for a duplicated sublevel.
 
-| Parameter | How to use it |
-|---|---|
-| `build_target` | Defaults to `all`. Usually change it to the one KMI used by your device. The choice is single-select; run the workflow separately for additional KMIs. One target still expands to multiple patch versions. |
-| `release_type` | Defaults to `Actions`, which keeps this run's Artifacts. `Pre-Release` and `Release` only publish from `zhuzhuzihan/GKI_BakaSU_SUSFS` when version filtering is off. Forks and filtered builds do not create Releases. Fixed-KMI and custom workflows do not have this option. |
-| `kernelsu_branch` | A BakaSU branch name or full 40-character commit SHA. Blank uses `main`; the main workflow form is prefilled with `main`. The main workflow resolves and pins the commit at the start of the run. |
-| `clean_build` | When checked, skips BakaSU, SUSFS, and optional feature patches; other patch switches no longer apply. `build_bypass` is independent and still triggers a second build. |
-| `version` | Optional kernel local-version suffix. It does not select Android/KMI or the kernel sublevel. Leave blank unless you need a custom `uname -r` identifier. |
-| `build_time` | Build timestamp. The form is prefilled with `Sun Dec 01 08:10:00 UTC 2024`; leaving that value unchanged uses this fixed timestamp. To use the current UTC time at run time, enter `N` or clear the field. You may also enter a timestamp such as `Sun Dec 01 08:10:00 UTC 2024`. |
-| `change_log` | Used only in upstream release notifications; it is not needed to build a kernel. |
+If you only need one sublevel, do not use this option. Go back to Option A or use Option C.
 
-### Feature Switches
+## Option C: choose a specific patch month or revision
 
-| Parameter | Default and behavior |
-|---|---|
-| `cancel_susfs` | Defaults to `false`, which means SUSFS is included; check it to disable SUSFS. Clean builds skip SUSFS, and Android 17 / 6.18 skips it automatically. |
-| `use_zram` | Off by default. The main workflow currently forces it off for Android 16 / 6.12; Android 17 / 6.18 skips it automatically. |
-| `use_bbg` | Off by default; check to apply the BBG anti-brick patch. |
-| `use_rekernel` | Off by default; check to apply the experimental Re-Kernel driver. Android 17 / 6.18 skips it automatically. |
-| `cve_2026_43499_patch` | On by default. Android 17 / 6.18 skips this patch series. |
-| `droidspaces` | Defaults to `off`. For 5.10, 5.15, 6.1, and 6.6, choose slot `678`, `123`, or `345`. Kernel 6.12 and later use the same universal patch, so any non-`off` value enables it. Different devices may require trying different slots. |
-| `droidspaces_ntsync` | Off by default and only applies when Droidspaces is enabled. Supported combinations are Android 12 / 5.10, Android 13 / 5.15, Android 14 / 6.1, Android 15 / 6.6, and Android 16 / 6.12. Android 13 / 5.10 and Android 17 / 6.18 skip it; Android 14 / 5.15 fails because no compatibility patch is available, so do not enable it there. |
-| `build_bypass` | Off by default. Enabling it runs a second full compilation and puts both the standard `Image` and `Bypass-Image` in the package, significantly increasing run time. It is for diagnosing kernel-module compatibility, not bypassing root detection. |
-| `use_nomount` | Off by default. NoMount kernel support also requires installing the companion [NoMount module](https://github.com/maxsteeel/nomount). Clean builds skip it. |
+Use this when:
 
-The main workflow does not expose the OnePlus 8E option. To use it, open **Build Custom Android Kernel** and enable `supp_op`, or choose a fixed-KMI workflow that exposes this input; Android 17 / 6.18 skips the OnePlus 8E patch.
+- the same 5.10 / 5.15 sublevel has multiple revisions and you need a specific one;
+- you know the exact `date` (patch month) you need;
+- you want to enable OnePlus 8E (`supp_op`) in a custom build;
+- you want `sub_level` to be `X` and follow the current source of the selected branch.
 
-## Manually Specify One Build: Build Custom Android Kernel
+This uses **Build Custom Android Kernel**. It builds one combination per run and does not create a Release.
 
-This workflow does not infer settings from the version matrix. It builds one combination from the values entered in the form. First open the matching [data](data/) JSON file: each object under `entries` has a full kernel version in `kernel`, an OS patch level in `date`, and a release `revision` when applicable. The top-level `lts` and `lts_revision` fields describe the separate LTS target. Then open **Build Custom Android Kernel** and fill in:
+### Look up the data JSON first
 
-1. `android_version` and `kernel_version` must be a supported pair from the table above, such as `android15` + `6.6`.
-2. Set `sub_level` to the last component of the full kernel version. For `6.6.92`, enter `92`.
-3. Set `os_patch_level` to the entry's `date` in the JSON data, such as `2025-07`; use `lts` for an LTS target.
-4. If the selected JSON entry has a `revision`, enter that exact value, such as `r14`. The form is prefilled with `r11`; clear it when the selected entry has no revision. A mismatched revision makes the workflow look for the wrong upstream tag and will usually fail. For LTS, check `lts_revision` if present.
-5. Set any needed features and click **Run workflow**. Download the result from that run's **Artifacts**; this workflow does not create a Release.
+Open the matching file, for example [data/android15/6.6.json](data/android15/6.6.json). Each object under `entries` looks like this:
 
-For example, the current [Android 15 / 6.6 data](data/android15/6.6.json) has an entry for `6.6.92` with patch level `2025-07` and no revision. Enter `android15`, `6.6`, `92`, and `2025-07`, and clear the prefilled `r11`. Prefer a numeric sublevel so the artifact name identifies the selected version; `X` follows the current source branch and cannot identify the built sublevel as precisely as a number.
+```json
+{ "date": "2025-07", "kernel": "6.6.92" }
+```
 
-## After the Build: Download and Verify
+5.10 / 5.15 entries may also have a `revision`:
 
-An Actions artifact is usually named like `BakaSU_kernel-android15-6.6.92-2025-07`. Download and extract GitHub's Artifact ZIP first; the `...AnyKernel3.zip` inside it is the package to flash. If Bypass was enabled, that package contains both `Image` and `Bypass-Image`. `AIO-REJ` is a patch-conflict diagnostic artifact, not a kernel package.
+```json
+{ "date": "2023-06", "kernel": "5.15.110", "revision": "r11" }
+```
 
-Before flashing, verify that the Android KMI, kernel series, and device requirements match. Back up the stock Boot image and have a working recovery method. A version number such as `6.6.xxx` alone does not prove compatibility.
+The top-level `lts` field is a separate LTS target. `date` is the release month of the Google GKI branch; it is not necessarily the full security patch date shown in Android settings.
 
-### Troubleshooting
+### Fill in the form
 
-- **The workflow is missing from Actions:** Enable Actions in your fork and make sure the default branch contains the workflow files under `.github/workflows/`; then choose the target branch from the run form.
-- **A build fails:** Open the failed job and expand the red step to view its logs. For a custom build, verify the Android/KMI pair and `revision`; when enabling NTSync, do not select Android 14 / 5.15.
-- **The main workflow is marked failed, but some versions succeeded:** Matrix jobs run independently. Review each job on the run summary and download Artifacts from successful jobs; use the failed job logs to identify the affected version.
-- **The downloaded file does not look flashable:** Extract GitHub's Artifact ZIP first, then locate `AnyKernel3.zip` inside the extracted directory.
+| Target | `android_version` | `kernel_version` | `sub_level` | `os_patch_level` | `revision` |
+|---|---|---|---|---|---|
+| Android 15 / 6.6.92, 2025-07 | `android15` | `6.6` | `92` | `2025-07` | Leave empty |
+| Android 14 / 5.15.110, 2023-06 | `android14` | `5.15` | `110` | `2023-06` | `r11` |
 
-## Other Workflows
+Steps:
 
-- **Send Telegram Bot Notification**: Sends a manual notification and is not used for kernel builds.
-- **Emergency Release Cleanup**: Reserved for repository owners to handle release cleanup; it is not a regular build entry point.
+1. Open **Actions → Build Custom Android Kernel → Run workflow**.
+2. `android_version` and `kernel_version` must be a supported pair, for example `android15` + `6.6`.
+3. `sub_level` is only the last component: `6.6.92` → `92`, `5.15.110` → `110`.
+4. `os_patch_level` is the JSON `date` in `YYYY-MM` format. For an LTS target, enter `lts`.
+5. `revision` must match the JSON exactly. If the entry has no `revision`, clear it, **including the prefilled `r11`**.
+6. Enable `supp_op` if you need OnePlus 8E support; enable other features as needed.
+7. Click **Run workflow** and download the result from that run's **Artifacts**. This workflow does not create a Release.
 
-## Stock Config
+> **`revision` is the easiest thing to get wrong.** The form's `r11` is only an example. The current 6.1 / 6.6 / 6.12 / 6.18 data has no revisions, so the field must be empty. A wrong value makes the build look for a non-existent upstream tag and usually fails.
 
-If `config/stock_defconfig` exists in the repository, the build automatically uses it to spoof the `/proc/config.gz` configuration. This step is skipped when the file does not exist. You can obtain `/proc/config.gz` from the device's current stock kernel, decompress it, place it in this directory, and name it `stock_defconfig`.
+For LTS: set `os_patch_level` to `lts` and normally leave `revision` empty (check `lts_revision` in the JSON; if it is absent, leave it empty).
 
-## GKI Data Synchronization
+`sub_level` also accepts `X`, which follows the current source of the selected branch. The artifact name will contain `X`, which is less precise than a numeric version; use a number when possible.
 
-The [Update GKI Version Data](.github/workflows/update-gki-data.yml) workflow runs automatically every Monday at 08:00 UTC and can also be triggered manually. It runs synchronization tests, updates the JSON files, validates the build matrix, and commits the data changes.
+## After the build: download, extract, flash
 
-## Acknowledgements
+### Find the right file
 
-- [zzh20188](https://github.com/zzh20188): Author of the former upstream GKI build repository. This repository is no longer part of that fork network, and `zzh20188/GKI_KernelSU_SUSFS` is no longer its upstream repository.
-- [coolzyd9107](https://github.com/coolzyd9107): Maintainer of this repository.
-- [zhuzhuzihan](https://github.com/zhuzhuzihan): Workflow fixes and Telegram bot development and maintenance.
-- [TanakaLun](https://github.com/TanakaLun): Workflow fixes and feature improvements.
-- [YC酱luyancib](https://github.com/luyanci): Telegram bot and build workflow suggestions.
-- [AlexLiuDev233](https://github.com/AlexLiuDev233): Workflow fixes.
-- [cctv18](https://github.com/cctv18): Workflow, kernel 6.12 support, and SUSFS troubleshooting suggestions.
+Actions artifact names usually look like this:
+
+| Case | Artifact name | After extracting the outer ZIP |
+|---|---|---|
+| Normal build | `BakaSU_kernel-android15-6.6.92-2025-07` | `android15-6.6.92-2025-07-BakaSU-AnyKernel3.zip` |
+| With revision | `BakaSU_kernel-android13-5.10.198-2023-12-r7` | `android13-5.10.198-2023-12-r7-BakaSU-AnyKernel3.zip` |
+| Clean build | `Clean_kernel-android15-6.6.92-2025-07` | `android15-6.6.92-2025-07-Clean-AnyKernel3.zip` |
+
+The **Artifacts download is always a ZIP**. Extract only that outer layer; the `...-AnyKernel3.zip` inside is the flashable package. **Do not extract the AK3 ZIP itself.** Artifacts may expire, so download them soon after the run.
+
+`AIO-REJ` is a collection of `.rej` patch-conflict files for maintainers, not a kernel package. The `...-Rejects` artifacts are the same thing and can be ignored.
+
+If `build_bypass` is enabled, the AK3 ZIP contains both the normal `Image` and a `Bypass-Image`. The installer asks you to choose: **Volume Down = Normal mode**, **Volume Up = Bypass mode**. Bypass only relaxes kernel module version checks; it **does not hide root and does not bypass detection**. Normal users do not need it.
+
+### Before flashing
+
+1. Confirm that the KMI and kernel series match the artifact; the same sublevel as your device is best. Do not judge compatibility from a version number such as `6.6.xxx` alone.
+2. Back up your current boot image and make sure you can restore it with fastboot or Recovery.
+3. Flash the inner `...-AnyKernel3.zip` with Recovery or an AnyKernel3-compatible kernel flasher.
+4. Reboot. The first boot may take a little longer than usual.
+5. After booting, install the [BakaSU manager](https://github.com/Baka-SU/BakaSU) and confirm root works. If you need the SUSFS module, you can install the [ksu_module_susfs](https://github.com/sidex15/ksu_module_susfs) recommended in the release notes; if you need NoMount, install the [NoMount module](https://github.com/maxsteeel/nomount).
+
+If the phone does not boot, restore the boot image you backed up and do not keep re-flashing. Post the failed job log, device model, and kernel version in [Issues](../../issues).
+
+> **Do not** flash the output as a ROM or a `boot.img`. It only replaces the kernel. User data is normally untouched, but a bad boot image will prevent the phone from starting.
+
+## Input reference
+
+### Build scope and release (Build GKI Kernels only)
+
+| Input | Default | How to use it |
+|---|---|---|
+| `build_target` | `all` | Select the one KMI for your device; it is single-select, so run the workflow separately for additional KMIs. Do not use `all` for a single phone. This is ignored in version-filter mode. |
+| `build_kernel_version` | `false` | Check it to filter by full kernel version and build only one version; `build_target` is then ignored. |
+| `kernel_version_filter` | Empty | A full version such as `6.6.92`, or `6.6.X` for the whole series (`X` is case-insensitive). Enter the bare version only: no `v`, no `-android15`, no suffix. It cannot be empty. |
+| `kernel_android_version` | `auto` | Use `auto` for 6.x. For 5.10 choose `android12` / `android13`; for 5.15 choose `android13` / `android14`. |
+| `release_type` | `Actions` | Keep `Actions` in a fork. `Pre-Release` / `Release` only publish from the release repository and only when version filtering is off; a fork does not create a Release. |
+| `change_log` | Empty | Used only in release notification text; it does not affect the build. |
+
+### Common inputs (all workflows)
+
+| Input | Default | How to use it |
+|---|---|---|
+| `kernelsu_branch` | `main` (blank also means `main`) | Normally leave it blank or enter `main`. Advanced users can enter a BakaSU branch name or a full 40-character commit SHA. |
+| `version` | Empty | Optional local kernel version suffix. It is not the kernel version; it changes the `uname -r` suffix. Usually leave it empty. |
+| `build_time` | `Sun Dec 01 08:10:00 UTC 2024` | Clear it or enter `N` to use the current UTC time; or enter a timestamp string such as `Sun Dec 01 08:10:00 UTC 2024`. |
+| `clean_build` | `false` | Skips BakaSU, SUSFS, and optional feature patches; the artifact is named `Clean_kernel-...`. Do not check it if you want root. `build_bypass` still triggers an extra compilation. |
+
+### Feature switches
+
+| Input | Default | In one sentence | When to enable / notes |
+|---|---|---|---|
+| `cancel_susfs` | `false` | Checking it **disables** SUSFS | Leave it unchecked to keep SUSFS. Clean builds and 6.18 skip SUSFS. |
+| `use_zram` | `false` | Enhanced ZRAM / LZ4KD algorithms | Enable only if you want the ZRAM enhancements. In `build_target` mode and the fixed 6.12 workflow it is forced off; 6.18 skips it. |
+| `use_bbg` | `false` | BBG anti-brick patch | Enable only if needed; not every device requires it. |
+| `use_rekernel` | `false` | Experimental Re-Kernel drivers | Usually unnecessary; 6.18 skips it. |
+| `cve_2026_43499_patch` | `true` | Applies the CVE-2026-43499 fix series | Recommended to keep on; 6.18 skips it. |
+| `droidspaces` | `off` | Droidspaces container support | Leave `off` unless you use containers. For 5.10–6.6 choose `678` / `123` / `345`; different devices may need different slots. For 6.12 / 6.18 any non-`off` value enables it. |
+| `droidspaces_ntsync` | `false` | Adds NTSync to Droidspaces | Requires Droidspaces to be enabled. Supported: Android 12/5.10, 13/5.15, 14/6.1, 15/6.6, 16/6.12. Android 14/5.15 fails; Android 13/5.10 and 17/6.18 skip it. |
+| `build_bypass` | `false` | Builds an extra Image with relaxed kernel module version checks | Significantly increases build time. It is for diagnosing module compatibility, **not for hiding root**. |
+| `use_nomount` | `false` | NoMount mount support | Also requires the separate [NoMount module](https://github.com/maxsteeel/nomount). Clean builds skip it. |
+| `supp_op` | `false` | OnePlus 8E support | The main workflow does not expose it. Use the custom workflow or a fixed workflow that has the switch; 6.18 skips it. |
+
+> **Android 17 / 6.18 automatically skips:** SUSFS, ZRAM/LZ4KD, NTSync, Re-Kernel, OnePlus 8E, and the CVE-2026-43499 fix series. BBG and Droidspaces remain available. The "build information summary" at the start of each build log lists the features that are actually enabled.
+
+> **Android 16 / 6.12 and ZRAM:** in `build_target` mode and the fixed 6.12 workflow, ZRAM is forced off; 6.18 skips it. Keeping it off is recommended for 6.12.
+
+## Workflow reference
+
+| Workflow | Manual run? | What it builds |
+|---|---|---|
+| **Build GKI Kernels** | Yes | Recommended entry point. Builds the full matrix for one KMI, or one version with the version filter. |
+| **Build Custom Android Kernel** | Yes | One exact combination from the form (patch month / revision). |
+| **Build Kernel - Android 12 (5.10)** | Yes | The full Android 12 / 5.10 version matrix. |
+| **Build Kernel - 5.15 (Android 13/14)** | Yes, but only Android 13 / 5.15 | The full 5.15 version matrix. A manual run cannot select Android 14; use the main or custom workflow for Android 14 / 5.15. |
+| **Build Kernel - Android 14 (6.1)** | Yes | The full Android 14 / 6.1 version matrix. |
+| **Build Kernel - Android 15 (6.6)** | Yes | The full Android 15 / 6.6 version matrix. |
+| **Build Kernel - Android 16 (6.12)** | Yes | The full Android 16 / 6.12 version matrix. |
+| **Build Kernel - Android 17 (6.18)** | Yes | The full Android 17 / 6.18 version matrix. |
+
+Notes:
+
+- **Build Kernel - Android 13 (5.10)** has no manual button. Use **Build GKI Kernels** and select `android13-5.10`.
+- Fixed-KMI workflows build multiple patch versions per run; they cannot build just one. For one version, use Option A or C.
+- **Prepare GKI Build Matrix** and **Kernel Build Progress** are internal reusable workflows and do not need to be run directly.
+- **Send Telegram Bot Notification** only sends notifications. **Emergency Release Cleanup** is for the repository owner to clean up releases. **Update GKI Version Data** syncs version data. None of them are build entry points.
+- Fixed-KMI and custom workflows only produce Artifacts; they do not create a Release.
+
+## Troubleshooting
+
+**The workflow is missing from Actions, or there is no Run workflow button.**  
+Make sure Actions is enabled in your fork and the default branch contains the files under `.github/workflows/`. **Build Kernel - Android 13 (5.10)** has no manual button by design.
+
+**I only wanted one version, but many jobs started.**  
+You probably used `build_target` mode, which builds every patch version for that KMI. Use the version filter in Option A instead.
+
+**The version filter says the kernel version was not found.**  
+That sublevel is not in `data/` yet. Use `6.6.X` for the whole series, or wait for the weekly data sync.
+
+**A build failed.**  
+Open the failed job and expand the red step to read the log. For a custom build, check `revision` against the JSON first. If NTSync is enabled, make sure you did not select Android 14 / 5.15. Other matrix jobs will keep running.
+
+**The main workflow is marked failed, but some versions succeeded.**  
+Matrix jobs are independent. Go back to the run summary and download Artifacts from the successful jobs; use the failed job logs to identify the affected version.
+
+**The downloaded ZIP cannot be flashed.**  
+Extract the outer ZIP downloaded from GitHub first; the `...-AnyKernel3.zip` inside is the flashable package. Do not extract the AK3 ZIP.
+
+**Should I choose `android13-5.15` or `android14-5.15`?**  
+Look at the `androidXX` part of `uname -r`, not the Android version. An Android 14 phone may also use a 6.1 kernel.
+
+**Why is there no Release?**  
+Forks, version-filtered builds, and custom builds do not create a Release. Download from **Artifacts** for that run. Only the release repository in non-filtered mode may create one.
+
+**Can I run several builds at once?**  
+A new `Build GKI Kernels` run on the same branch cancels the one already running. Wait for it to finish, or use another branch.
+
+**Does this support SukiSU?**  
+No. This repository builds BakaSU only and does not expose a SukiSU option.
+
+## Optional: spoof `/proc/config.gz` (Stock Config)
+
+If `config/stock_defconfig` exists in the repository, the build uses it to spoof `/proc/config.gz`; if the file does not exist, the step is skipped. Clean builds do not apply it.
+
+To use it, obtain `/proc/config.gz` from the device's current stock kernel, decompress it, place it in `config/`, and rename it to `stock_defconfig`. Rebuild afterwards. The build log shows whether the step was applied.
+
+## Maintainers: update GKI version data
+
+[Update GKI Version Data](.github/workflows/update-gki-data.yml) runs every Monday at 08:00 UTC and can also be triggered manually. It runs the sync tests, updates the JSON files under `data/android*/`, validates all build matrices, and commits the data changes.
+
+Normal builds do not need to run it. If the version filter keeps reporting a missing version, check whether the data has been synced.
+
+## Credits
+
+- [zzh20188](https://github.com/zzh20188): author of the former upstream GKI build repository. This repository is no longer part of that fork network, and `zzh20188/GKI_KernelSU_SUSFS` is no longer its upstream repository.
+- [coolzyd9107](https://github.com/coolzyd9107): maintainer of this repository.
+- [zhuzhuzihan](https://github.com/zhuzhuzihan): workflow fixes and Telegram Bot development and maintenance.
+- [TanakaLun](https://github.com/TanakaLun): workflow fixes and feature improvements.
+- [YC酱luyancib](https://github.com/luyanci): Telegram Bot and build workflow suggestions.
+- [AlexLiuDev233](https://github.com/AlexLiuDev233): workflow fixes.
+- [cctv18](https://github.com/cctv18): workflow, 6.12 support, and SUSFS troubleshooting suggestions.
+
+Thanks also to the BakaSU, SUSFS4KSU, AnyKernel3, and other upstream projects.
 
 See the [Telegram channel](https://t.me/BakaSUKernelBuilds) for new builds and important updates. The official BakaSU channel is [BakaSU_Grp](https://t.me/BakaSU_Grp).
+
+## License
+
+This project is released under GPL-2.0. See [LICENSE](LICENSE).
