@@ -3,8 +3,9 @@
   "kernel_version": "5.10",
   "entries": [
     {
-      "date": "2026-10",
-      "kernel": "5.10.269"
+      "date": "2024-01",
+      "kernel": "5.10.198",
+      "revision": "r17"
     },
     {
       "date": "lts",
