@@ -650,7 +650,18 @@ jobs:
                 && ! grep -q '^diff --git a/kernel/Kbuild b/kernel/Kbuild' ./10_enable_susfs_for_ksu.patch; then
                 sed -i 's|kernel/Makefile|kernel/Kbuild|g' ./10_enable_susfs_for_ksu.patch
               fi
-              patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true
+              # 三态判断：可应用 / 已存在 / 不匹配。用 warning 代替 || true，
+              # 避免补丁没打上却显示成功（SUSFS 失效时很难从日志察觉）。
+              if patch -p1 --forward --dry-run < 10_enable_susfs_for_ksu.patch >/dev/null 2>&1; then
+                patch -p1 --forward < 10_enable_susfs_for_ksu.patch
+                echo "✅ KernelSU SUSFS 支持补丁已应用"
+              elif patch -p1 --reverse --dry-run < 10_enable_susfs_for_ksu.patch >/dev/null 2>&1; then
+                echo "✅ KernelSU SUSFS 支持补丁已存在，跳过"
+              else
+                echo "::warning::KernelSU SUSFS 支持补丁与当前源码不匹配，未能应用"
+                echo "--- 补丁前 40 行 ---"
+                head -40 10_enable_susfs_for_ksu.patch
+              fi
 
               cd ..
               ;;
@@ -740,7 +751,19 @@ jobs:
             fi
           fi
 
-          patch -p1 < 50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch || true
+          SUSFS_MAIN_PATCH="50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch"
+          if [ ! -f "$SUSFS_MAIN_PATCH" ]; then
+            echo "::warning::SUSFS 主补丁不存在: $SUSFS_MAIN_PATCH"
+          elif patch -p1 --forward --dry-run < "$SUSFS_MAIN_PATCH" >/dev/null 2>&1; then
+            patch -p1 --forward < "$SUSFS_MAIN_PATCH"
+            echo "✅ SUSFS 主补丁已应用"
+          elif patch -p1 --reverse --dry-run < "$SUSFS_MAIN_PATCH" >/dev/null 2>&1; then
+            echo "✅ SUSFS 主补丁已存在，跳过"
+          else
+            echo "::warning::SUSFS 主补丁与当前源码不匹配，未能应用"
+            echo "--- 补丁前 40 行 ---"
+            head -40 "$SUSFS_MAIN_PATCH"
+          fi
 
           # 主补丁应用后还原临时上下文，避免无关源码差异保留到最终产物
           if [[ "${{ inputs.android_version }}" == "android12" && "${{ inputs.kernel_version }}" == "5.10" ]]; then
