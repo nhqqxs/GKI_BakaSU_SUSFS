@@ -1,0 +1,24 @@
+diff --git a/drivers/media/v4l2-core/v4l2-ctrls.c b/drivers/media/v4l2-core/v4l2-ctrls.c
+--- a/drivers/media/v4l2-core/v4l2-ctrls.c
++++ b/drivers/media/v4l2-core/v4l2-ctrls.c
+@@ -3590,6 +3590,20 @@
+ {
+ 	int ret;
+ 
++	/*
++	 * MTK_AIE_NULL_LOCK_FIX
++	 *
++	 * Some vendor camera drivers (notably MediaTek's mtk_aie) call
++	 * into the request API with a control handler that never went
++	 * through v4l2_ctrl_handler_init(), so from->lock is still NULL.
++	 * mutex_lock(from->lock) below would then oops the kernel.
++	 * Refuse to bind such a handler: the failure paths of both
++	 * v4l2_ctrl_request_complete() and v4l2_ctrls_find_req_obj()
++	 * already free the temporary handler and return cleanly.
++	 */
++	if (!from || !from->lock)
++		return -EINVAL;
++
+ 	ret = v4l2_ctrl_request_clone(hdl, from);
+ 
+ 	if (!ret) {
