@@ -44,7 +44,10 @@ on:
         default: "Sun Dec 01 08:10:00 UTC 2024"
 
       # ==================== Feature switches ====================
-      use_zram:
+      use_zram_lz4:
+        required: true
+        type: boolean
+      use_zram_all:
         required: true
         type: boolean
       use_bbg:
@@ -115,7 +118,8 @@ jobs:
       ksu_branch: ${{ inputs.kernelsu_branch }}
       version: ${{ inputs.version || '' }}
       build_time: ${{ inputs.build_time || '' }}
-      use_zram: ${{ inputs.use_zram }}
+      use_zram_lz4: ${{ inputs.use_zram_lz4 }}
+      use_zram_all: ${{ inputs.use_zram_all }}
       use_bbg: ${{ inputs.use_bbg }}
       use_rekernel: ${{ inputs.use_rekernel || false }}
       supp_op: ${{ inputs.supp_op || false }}
