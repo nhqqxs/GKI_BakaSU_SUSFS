@@ -1,0 +1,120 @@
+diff --git a/security/selinux/avc.c b/security/selinux/avc.c
+--- a/security/selinux/avc.c
++++ b/security/selinux/avc.c
+@@ -30,6 +30,7 @@
+ #include "avc.h"
+ #include "avc_ss.h"
+ #include "classmap.h"
++#include "security.h"
+ 
+ #define CREATE_TRACE_POINTS
+ #include <trace/events/avc.h>
+@@ -768,6 +769,90 @@
+ }
+ 
+ /* This is the slow part of avc audit with big stack footprint */
++
++/*
++ * ---- avc context hide begin ----
++ *
++ * 把"app 域探测 root 域进程"的审计目标域换成普通系统 app 域。
++ *
++ * 只替换 tcontext（tsid），记录本身照常产生：条数、sclass、权限位、
++ * scontext、path 全部保持原样，因此不会出现"有 EACCES 却没有 avc"
++ * 这种自相矛盾的痕迹。
++ *
++ * 伪装目标选 platform_app：它在 /proc/<pid> 上被 untrusted_app
++ * getattr 拒绝本来是常见现象，混在一堆系统 app 的拒绝记录里不显眼。
++ */
++#define ZN_AVC_FAKE_CONTEXT	"u:r:platform_app:s0:c512,c768"
++
++static bool zn_avc_is_root_domain(const char *ctx)
++{
++	return !strncmp(ctx, "u:r:ksu:", 8) ||
++	       !strncmp(ctx, "u:r:ksud:", 9) ||
++	       !strncmp(ctx, "u:r:ksu_exec:", 13) ||
++	       !strncmp(ctx, "u:r:su:", 7) ||
++	       !strncmp(ctx, "u:r:magisk:", 11) ||
++	       !strncmp(ctx, "u:r:apd:", 7);
++}
++
++static bool zn_avc_is_app_domain(const char *ctx)
++{
++	return !strncmp(ctx, "u:r:untrusted_app", 17) ||
++	       !strncmp(ctx, "u:r:priv_app", 12) ||
++	       !strncmp(ctx, "u:r:platform_app", 16) ||
++	       !strncmp(ctx, "u:r:system_app", 14) ||
++	       !strncmp(ctx, "u:r:isolated_app", 16);
++}
++
++/*
++ * 判断这条审计是否需要伪装。只在 denied 路径上调用，频率等于真实的
++ * SELinux 拒绝次数，不会进入任何热路径。
++ */
++static bool zn_avc_should_fake(struct selinux_state *state, u32 ssid, u32 tsid)
++{
++	char *tctx = NULL, *sctx = NULL;
++	u32 tlen = 0, slen = 0;
++	bool fake = false;
++
++	if (security_sid_to_context(state, tsid, &tctx, &tlen))
++		return false;
++	if (!tctx)
++		return false;
++	if (!zn_avc_is_root_domain(tctx))
++		goto out;
++
++	if (security_sid_to_context(state, ssid, &sctx, &slen))
++		goto out;
++	if (sctx && zn_avc_is_app_domain(sctx))
++		fake = true;
++out:
++	kfree(tctx);
++	kfree(sctx);
++	return fake;
++}
++
++/*
++ * 把伪装用的 context 解析成 sid，成功一次后缓存。
++ * 失败（某些策略里没有该域）时返回 0，调用方保持原样，不影响审计。
++ */
++static u32 zn_avc_fake_tsid(struct selinux_state *state)
++{
++	static u32 cached;
++	u32 sid = 0;
++
++	if (READ_ONCE(cached))
++		return READ_ONCE(cached);
++
++	if (security_context_to_sid(state, ZN_AVC_FAKE_CONTEXT,
++				    (u32)(sizeof(ZN_AVC_FAKE_CONTEXT) - 1),
++				    &sid, GFP_ATOMIC))
++		return 0;
++
++	if (sid)
++		WRITE_ONCE(cached, sid);
++	return sid;
++}
++/* ---- avc context hide end ---- */
++
+ noinline int slow_avc_audit(struct selinux_state *state,
+ 			    u32 ssid, u32 tsid, u16 tclass,
+ 			    u32 requested, u32 audited, u32 denied, int result,
+@@ -782,6 +867,17 @@
+ 	if (!a) {
+ 		a = &stack_data;
+ 		a->type = LSM_AUDIT_DATA_NONE;
++	}
++
++	/*
++	 * avc context hide: 把 app 探测 root 域的审计目标换成普通系统 app 域。
++	 * 记录照常产生，只是 tcontext 变了，避免"有 EACCES 却没有 avc"的矛盾。
++	 */
++	if (denied && zn_avc_should_fake(state, ssid, tsid)) {
++		u32 zn_fake = zn_avc_fake_tsid(state);
++
++		if (zn_fake)
++			tsid = zn_fake;
+ 	}
+ 
+ 	sad.tclass = tclass;
