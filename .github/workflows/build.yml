@@ -61,7 +61,10 @@ on:
         required: false
         type: boolean
         default: false
-      use_zram:
+      use_zram_lz4:
+        required: true
+        type: boolean
+      use_zram_all:
         required: true
         type: boolean
       use_bbg:
@@ -148,7 +151,7 @@ jobs:
           echo "清洁构建      : ${{ inputs.clean_build }}"
           echo "禁用 BakaSU   : ${{ inputs.disable_bakasu }}"
           echo "SUSFS 状态    : ${{ inputs.clean_build != true && inputs.disable_bakasu != true && inputs.enable_susfs && !(inputs.android_version == 'android17' && inputs.kernel_version == '6.18') }}"
-          echo "ZRAM 增强     : ${{ inputs.clean_build != true && inputs.use_zram && !(inputs.android_version == 'android17' && inputs.kernel_version == '6.18') }}"
+          echo "ZRAM 增强     : ${{ inputs.clean_build != true && inputs.use_zram_all && 'all algorithms' || inputs.clean_build != true && inputs.use_zram_lz4 && 'lz4-1.10 only' || 'false' }}"
           echo "BBG 补丁      : ${{ inputs.clean_build != true && inputs.use_bbg }}"
           echo "Re-Kernel     : ${{ inputs.clean_build != true && inputs.use_rekernel && !(inputs.android_version == 'android17' && inputs.kernel_version == '6.18') }}"
           echo "NTSync        : ${{ inputs.clean_build != true && inputs.droidspaces != 'off' && inputs.droidspaces_ntsync && !(inputs.android_version == 'android17' && inputs.kernel_version == '6.18') }}"
@@ -1146,7 +1149,7 @@ jobs:
       # ==================== 升级 LZ4 并应用 LZ4KD/LZ4K_OPLUS 补丁 ====================
       # 统一处理 ZRAM 相关的 LZ4 变更，减少重复 step
       - name: 配置 ZRAM LZ4 补丁栈
-        if: ${{ inputs.clean_build != true && inputs.use_zram && !(inputs.android_version == 'android17' && inputs.kernel_version == '6.18') }}
+        if: ${{ inputs.clean_build != true && (inputs.use_zram_all || inputs.use_zram_lz4) && !(inputs.android_version == 'android17' && inputs.kernel_version == '6.18') }}
         working-directory: ${{ env.KERNEL_ROOT }}/common
         run: |
           # 第一阶段：升级 LZ4 到 1.10.0 并添加 ARM64 NEON 加速
@@ -1161,20 +1164,24 @@ jobs:
             echo "f2fs-\$(CONFIG_F2FS_IOSTAT) += iostat.o" >> "fs/f2fs/Makefile"
           fi
 
-          # 第二阶段：应用 LZ4KD 和 LZ4K_OPLUS 补丁
-          cp -r $SUKISU_PATCHES/other/zram/lz4k/include/linux/* ./include/linux/
-          cp -r $SUKISU_PATCHES/other/zram/lz4k/lib/* ./lib/
-          cp -r $SUKISU_PATCHES/other/zram/lz4k/crypto/* ./crypto/
-          cp -r $SUKISU_PATCHES/other/zram/lz4k_oplus ./lib/
+          # 第二阶段：应用 LZ4KD 和 LZ4K_OPLUS 补丁（仅 all algorithms 模式）
+          if [ "${{ inputs.use_zram_all }}" = "true" ]; then
+            cp -r $SUKISU_PATCHES/other/zram/lz4k/include/linux/* ./include/linux/
+            cp -r $SUKISU_PATCHES/other/zram/lz4k/lib/* ./lib/
+            cp -r $SUKISU_PATCHES/other/zram/lz4k/crypto/* ./crypto/
+            cp -r $SUKISU_PATCHES/other/zram/lz4k_oplus ./lib/
 
-          cp $SUKISU_PATCHES/other/zram/zram_patch/${{ inputs.kernel_version }}/lz4kd.patch ./
-          if ! patch -p1 -F 3 < lz4kd.patch; then
-            echo "::warning::lz4kd.patch 应用失败，可能已应用或上下文不匹配"
-          fi
+            cp $SUKISU_PATCHES/other/zram/zram_patch/${{ inputs.kernel_version }}/lz4kd.patch ./
+            if ! patch -p1 -F 3 < lz4kd.patch; then
+              echo "::warning::lz4kd.patch 应用失败，可能已应用或上下文不匹配"
+            fi
 
-          cp $SUKISU_PATCHES/other/zram/zram_patch/${{ inputs.kernel_version }}/lz4k_oplus.patch ./
-          if ! patch -p1 -F 3 < lz4k_oplus.patch; then
-            echo "::warning::lz4k_oplus.patch 应用失败，可能已应用或上下文不匹配"
+            cp $SUKISU_PATCHES/other/zram/zram_patch/${{ inputs.kernel_version }}/lz4k_oplus.patch ./
+            if ! patch -p1 -F 3 < lz4k_oplus.patch; then
+              echo "::warning::lz4k_oplus.patch 应用失败，可能已应用或上下文不匹配"
+            fi
+          else
+            echo "仅启用 lz4-1.10，跳过 LZ4KD / LZ4K_OPLUS 补丁"
           fi
 
       # ==================== 修复 6.6 WiFi/蓝牙兼容性（三星 + 小米） ====================
@@ -1233,7 +1240,7 @@ jobs:
       # ==================== 配置 ZRAM 选项 ====================
       # 启用各种 ZRAM 压缩算法
       - name: 配置 ZRAM 选项
-        if: ${{ inputs.clean_build != true && inputs.use_zram && !(inputs.android_version == 'android17' && inputs.kernel_version == '6.18') }}
+        if: ${{ inputs.clean_build != true && (inputs.use_zram_all || inputs.use_zram_lz4) && !(inputs.android_version == 'android17' && inputs.kernel_version == '6.18') }}
         run: |
           CONFIG_FILE="$DEFCONFIG"
 
@@ -1244,8 +1251,11 @@ jobs:
           CONFIG_ZRAM=y
           CONFIG_MODULE_SIG=n
           CONFIG_CRYPTO_LZO=y
-          CONFIG_ZRAM_DEF_COMP_LZ4KD=y
           EOF
+            # 默认压缩算法只有在 LZ4KD 被编入时才可用
+            if [ "${{ inputs.use_zram_all }}" = "true" ]; then
+              echo "CONFIG_ZRAM_DEF_COMP_LZ4KD=y" >> "$CONFIG_FILE"
+            fi
           fi
 
           # 5.15 / 6.1：将模块改为内建
@@ -1271,7 +1281,12 @@ jobs:
 
           # 启用压缩算法（使用独立 fragment 文件）
           if grep -q "CONFIG_ZSMALLOC=y" "$CONFIG_FILE" && grep -q "CONFIG_ZRAM=y" "$CONFIG_FILE"; then
-            cat "$ZZH_PATCHES/config/zram.config" >> "$CONFIG_FILE"
+            if [ "${{ inputs.use_zram_all }}" = "true" ]; then
+              cat "$ZZH_PATCHES/config/zram.config" >> "$CONFIG_FILE"
+            else
+              # 仅 lz4-1.10：剔除依赖 LZ4KD/LZ4K_OPLUS 驱动的配置项，否则编译期找不到符号
+              grep -vE 'LZ4KD|LZ4K_OPLUS' "$ZZH_PATCHES/config/zram.config" >> "$CONFIG_FILE" || true
+            fi
           fi
 
       # ==================== 添加 BBG 防格机补丁 ====================
