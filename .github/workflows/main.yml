@@ -87,9 +87,13 @@ on:
         default: false
 
       use_zram:
-        description: "Enable enhanced ZRAM algorithms"
-        type: boolean
-        default: false
+        description: "Enhanced ZRAM algorithms (lz4-1.10 only, or all incl. LZ4KD/LZ4K_OPLUS)"
+        type: choice
+        options:
+          - "none"
+          - "lz4-1.10"
+          - "all"
+        default: "none"
       use_bbg:
         description: "Enable the BBG anti-brick patch"
         type: boolean
@@ -268,7 +272,8 @@ jobs:
       ksu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
       version: ${{ inputs.version || '' }}
       build_time: ${{ inputs.build_time || '' }}
-      use_zram: ${{ inputs.use_zram }}
+      use_zram_lz4: ${{ inputs.use_zram == 'lz4-1.10' || inputs.use_zram == 'all' }}
+      use_zram_all: ${{ inputs.use_zram == 'all' }}
       use_bbg: ${{ inputs.use_bbg }}
       use_rekernel: ${{ inputs.use_rekernel || false }}
       supp_op: ${{ inputs.supp_op }}
@@ -294,7 +299,8 @@ jobs:
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
       version: ${{ inputs.version }}
       build_time: ${{ inputs.build_time || '' }}
-      use_zram: ${{ inputs.use_zram }}
+      use_zram_lz4: ${{ inputs.use_zram == 'lz4-1.10' || inputs.use_zram == 'all' }}
+      use_zram_all: ${{ inputs.use_zram == 'all' }}
       use_bbg: ${{ inputs.use_bbg }}
       use_rekernel: ${{ inputs.use_rekernel }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
@@ -320,7 +326,8 @@ jobs:
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
       version: ${{ inputs.version }}
       build_time: ${{ inputs.build_time || '' }}
-      use_zram: ${{ inputs.use_zram }}
+      use_zram_lz4: ${{ inputs.use_zram == 'lz4-1.10' || inputs.use_zram == 'all' }}
+      use_zram_all: ${{ inputs.use_zram == 'all' }}
       use_bbg: ${{ inputs.use_bbg }}
       use_rekernel: ${{ inputs.use_rekernel }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
@@ -346,7 +353,8 @@ jobs:
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
       version: ${{ inputs.version }}
       build_time: ${{ inputs.build_time || '' }}
-      use_zram: ${{ inputs.use_zram }}
+      use_zram_lz4: ${{ inputs.use_zram == 'lz4-1.10' || inputs.use_zram == 'all' }}
+      use_zram_all: ${{ inputs.use_zram == 'all' }}
       use_bbg: ${{ inputs.use_bbg }}
       use_rekernel: ${{ inputs.use_rekernel }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
@@ -372,7 +380,8 @@ jobs:
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
       version: ${{ inputs.version }}
       build_time: ${{ inputs.build_time || '' }}
-      use_zram: ${{ inputs.use_zram }}
+      use_zram_lz4: ${{ inputs.use_zram == 'lz4-1.10' || inputs.use_zram == 'all' }}
+      use_zram_all: ${{ inputs.use_zram == 'all' }}
       use_bbg: ${{ inputs.use_bbg }}
       use_rekernel: ${{ inputs.use_rekernel }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
@@ -398,7 +407,8 @@ jobs:
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
       version: ${{ inputs.version }}
       build_time: ${{ inputs.build_time || '' }}
-      use_zram: ${{ inputs.use_zram }}
+      use_zram_lz4: ${{ inputs.use_zram == 'lz4-1.10' || inputs.use_zram == 'all' }}
+      use_zram_all: ${{ inputs.use_zram == 'all' }}
       use_bbg: ${{ inputs.use_bbg }}
       use_rekernel: ${{ inputs.use_rekernel }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
@@ -424,7 +434,8 @@ jobs:
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
       version: ${{ inputs.version }}
       build_time: ${{ inputs.build_time || '' }}
-      use_zram: ${{ inputs.use_zram }}
+      use_zram_lz4: ${{ inputs.use_zram == 'lz4-1.10' || inputs.use_zram == 'all' }}
+      use_zram_all: ${{ inputs.use_zram == 'all' }}
       use_bbg: ${{ inputs.use_bbg }}
       use_rekernel: ${{ inputs.use_rekernel }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
@@ -450,7 +461,8 @@ jobs:
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
       version: ${{ inputs.version }}
       build_time: ${{ inputs.build_time || '' }}
-      use_zram: ${{ inputs.use_zram }}
+      use_zram_lz4: ${{ inputs.use_zram == 'lz4-1.10' || inputs.use_zram == 'all' }}
+      use_zram_all: ${{ inputs.use_zram == 'all' }}
       use_bbg: ${{ inputs.use_bbg }}
       use_rekernel: ${{ inputs.use_rekernel }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
@@ -476,7 +488,8 @@ jobs:
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
       version: ${{ inputs.version }}
       build_time: ${{ inputs.build_time || '' }}
-      use_zram: ${{ inputs.use_zram }}
+      use_zram_lz4: ${{ inputs.use_zram == 'lz4-1.10' || inputs.use_zram == 'all' }}
+      use_zram_all: ${{ inputs.use_zram == 'all' }}
       use_bbg: ${{ inputs.use_bbg }}
       use_rekernel: ${{ inputs.use_rekernel }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
