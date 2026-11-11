@@ -1,0 +1,145 @@
+diff --git a/drivers/misc/nuke_core_ctl_limit_cpus.c b/drivers/misc/nuke_core_ctl_limit_cpus.c
+new file mode 100644
+--- /dev/null
++++ b/drivers/misc/nuke_core_ctl_limit_cpus.c
+@@ -0,0 +1,126 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * nuke_core_ctl_limit_cpus.c - 阻止 MediaTek core_ctl 限制 CPU 核心数
++ *
++ * MTK core_ctl 会按负载调用 core_ctl_set_limit_cpus(cid, min, max) 动态限制
++ * 每个 cluster 的在线核心数（例如把四个大核压到只留一个），在导航、后台
++ * 保活等场景下造成明显卡顿。
++ *
++ * 这里用 kprobe 挂在该函数入口，把 max 抬到 num_possible_cpus()，使限制
++ * 失效。与社区模块 nuke_core_ctl_limit_cpus 行为一致：不跳过原函数，
++ * 只改 max 参数后返回 0，让 core_ctl 内部状态保持同步。
++ *
++ * 非 MTK 设备上符号不存在，重试若干次后放弃，仅打印提示，不影响启动。
++ */
++
++#include <linux/init.h>
++#include <linux/kprobes.h>
++#include <linux/cpumask.h>
++#include <linux/workqueue.h>
++#include <linux/jiffies.h>
++#include <linux/smp.h>
++#include <linux/ptrace.h>
++
++#define NUKE_CC_PREFIX	"nuke_core_ctl: "
++
++/*
++ * 调试开关：打开后每次 core_ctl 调整都会打印 cid/min/max。
++ * 由于 core_ctl 每次评估都会调用该函数，常规使用会刷屏，默认关闭。
++ * 需要排查时取消下面这行注释重新编译即可。
++ */
++/* #define NUKE_CC_DEBUG */
++
++/*
++ * 不同架构的寄存器数组布局不同：
++ *   arm64 -> struct pt_regs::regs[]
++ *   arm   -> struct pt_regs::uregs[]
++ * GKI 目标都是 arm64，其他架构给出明确的编译期提示。
++ */
++#if defined(CONFIG_ARM64)
++#define NUKE_CC_ARG(regs, n)	((regs)->regs[(n)])
++#elif defined(CONFIG_ARM)
++#define NUKE_CC_ARG(regs, n)	((regs)->uregs[(n)])
++#else
++#error "nuke_core_ctl_limit_cpus: only arm64/arm are supported"
++#endif
++
++static struct kprobe nuke_cc_kp = {
++	.symbol_name = "core_ctl_set_limit_cpus",
++};
++
++/*
++ * core_ctl_set_limit_cpus() 在独立的 dlkm 模块 mtk_core_ctl 中，
++ * 该模块由 userspace 在 late_initcall 之后才 modprobe，因此注册要重试。
++ */
++#define NUKE_CC_MAX_RETRY	30
++#define NUKE_CC_RETRY_DELAY	(2 * HZ)
++
++static struct delayed_work nuke_cc_work;
++static int nuke_cc_retry;
++
++static int nuke_cc_pre_handler(struct kprobe *p, struct pt_regs *regs)
++{
++	int cid = (int)NUKE_CC_ARG(regs, 0);
++	int min = (int)NUKE_CC_ARG(regs, 1);
++	int max = (int)NUKE_CC_ARG(regs, 2);
++	int cap = num_possible_cpus();
++
++#ifdef NUKE_CC_DEBUG
++	/*
++	 * core_ctl 每次调整都会调这个函数，打印会刷屏，默认关闭。
++	 * 需要排查时在文件顶部取消 NUKE_CC_DEBUG 的注释即可。
++	 */
++	pr_info(NUKE_CC_PREFIX "<%s> called: cid = %d, min = %d, max = %d\n",
++		p->symbol_name, cid, min, max);
++#else
++	(void)cid;
++	(void)min;
++	(void)p->symbol_name;
++#endif
++
++	/*
++	 * 只在 max 被压低时才抬高。返回 0 表示继续执行原函数，
++	 * 这样 cluster->max_cpus 等内部状态仍会被正确更新。
++	 */
++	if (max < cap)
++		NUKE_CC_ARG(regs, 2) = (unsigned long)cap;
++
++	return 0;
++}
++
++static void nuke_cc_register(struct work_struct *work)
++{
++	int ret = register_kprobe(&nuke_cc_kp);
++
++	if (ret) {
++		/*
++		 * core_ctl_set_limit_cpus 位于独立的 dlkm 模块 mtk_core_ctl，
++		 * 由 userspace 在 late_initcall 之后才 modprobe，所以这里必须
++		 * 重试等待符号出现，否则永远注册不上。
++		 */
++		if (++nuke_cc_retry <= NUKE_CC_MAX_RETRY) {
++			pr_info(NUKE_CC_PREFIX "symbol %s not ready (%d), retry %d/%d\n",
++				nuke_cc_kp.symbol_name, ret,
++				nuke_cc_retry, NUKE_CC_MAX_RETRY);
++			schedule_delayed_work(&nuke_cc_work, NUKE_CC_RETRY_DELAY);
++		} else {
++			pr_warn(NUKE_CC_PREFIX "giving up after %d retries (%d)\n",
++				nuke_cc_retry, ret);
++		}
++		return;
++	}
++
++	pr_info(NUKE_CC_PREFIX "active on %s, cap = %d cpus (after %d retries)\n",
++		nuke_cc_kp.symbol_name, num_possible_cpus(), nuke_cc_retry);
++}
++
++static int __init nuke_cc_init(void)
++{
++	nuke_cc_kp.pre_handler = nuke_cc_pre_handler;
++	INIT_DELAYED_WORK(&nuke_cc_work, nuke_cc_register);
++
++	/* 首次延迟 3 秒，之后每 2 秒重试一次，最多 30 次（约 63 秒） */
++	schedule_delayed_work(&nuke_cc_work, 3 * HZ);
++	return 0;
++}
++late_initcall(nuke_cc_init);
+
+diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -2,6 +2,9 @@
+ #
+ # Makefile for misc devices that really don't fit anywhere else.
+ #
++
++# 阻止 MTK core_ctl 限制 CPU 核心数（未开启 KPROBES 时不参与构建）
++obj-$(CONFIG_KPROBES)		+= nuke_core_ctl_limit_cpus.o
+ 
+ obj-$(CONFIG_IBM_ASM)		+= ibmasm/
+ obj-$(CONFIG_IBMVMC)		+= ibmvmc.o
