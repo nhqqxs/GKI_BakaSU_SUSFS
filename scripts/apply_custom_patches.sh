@@ -465,12 +465,19 @@ for index in "${!PATCH_FILES[@]}"; do
     echo "  - $relative_path"
   done
 
-  # 只有反向试打「干净成功」才说明补丁真的已经应用。
-  # patch 在反向失败时会打印 "Unreversed patch detected! Ignoring -R."，
-  # 然后改用正向试打；正向一旦成功（哪怕有行号 offset），退出码仍是 0。
-  # 若只看退出码，未应用的补丁会被误判成「已存在」并跳过，导致补丁永远打不进去。
-  if PATCH_REVERSE_CHECK_OUTPUT="$(patch --batch --reverse --dry-run -p1 < "$PATCH_FILE" 2>&1)" &&
-     ! grep -qi 'Unreversed patch detected' <<< "$PATCH_REVERSE_CHECK_OUTPUT"; then
+  # 判断补丁是否已经应用：用 git apply 反向预检查，而不是 patch -R。
+  #
+  # 不用 patch 的原因：patch 在反向失败时会打印 "Unreversed patch detected!
+  # Ignoring -R."，然后自动改做正向试打；只要正向能落地（哪怕有行号 offset），
+  # 退出码仍然是 0，于是「未应用」被误判成「已应用」而跳过。
+  # 若改用「输出里是否出现 Unreversed 字样」来补救，又会误伤：patch 会把被检查
+  # 的源码片段一并打印，补丁内容里若含该字样（例如某些日志/字符串补丁）就会误命中，
+  # 反而把已应用的补丁判成未应用，导致重复应用失败并被跳过。
+  #
+  # git apply -R --check 不做智能反转，按上下文匹配、容忍行号 offset：
+  #   已应用 -> 反向可应用 -> 返回 0
+  #   未应用 -> 反向不可应用 -> 返回非 0
+  if PATCH_REVERSE_CHECK_OUTPUT="$(git apply --reverse --check "$PATCH_FILE" 2>&1)"; then
     echo "::endgroup::"
     echo "======================================================================"
     echo "::group::✔ 自定义补丁已存在: $PATCH_NAME"
