@@ -465,7 +465,12 @@ for index in "${!PATCH_FILES[@]}"; do
     echo "  - $relative_path"
   done
 
-  if PATCH_REVERSE_CHECK_OUTPUT="$(patch --batch --reverse --dry-run -p1 < "$PATCH_FILE" 2>&1)"; then
+  # 只有反向试打「干净成功」才说明补丁真的已经应用。
+  # patch 在反向失败时会打印 "Unreversed patch detected! Ignoring -R."，
+  # 然后改用正向试打；正向一旦成功（哪怕有行号 offset），退出码仍是 0。
+  # 若只看退出码，未应用的补丁会被误判成「已存在」并跳过，导致补丁永远打不进去。
+  if PATCH_REVERSE_CHECK_OUTPUT="$(patch --batch --reverse --dry-run -p1 < "$PATCH_FILE" 2>&1)" &&
+     ! grep -qi 'Unreversed patch detected' <<< "$PATCH_REVERSE_CHECK_OUTPUT"; then
     echo "::endgroup::"
     echo "======================================================================"
     echo "::group::✔ 自定义补丁已存在: $PATCH_NAME"
