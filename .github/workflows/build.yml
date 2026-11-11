@@ -1136,14 +1136,37 @@ jobs:
 
           echo "=== NTSync 补丁与配置注入完成 ==="
 
+      # ==================== Unicode 规范化绕过修复 ====================
+      # 修复 fs/unicode/mkutf8data.c 里 Default_Ignorable_Code_Point（零宽字符）
+      # 未从 casefold 表剔除的问题：攻击者可用零宽字符构造「视觉相同、字节不同」
+      # 的文件名，绕过基于路径字符串的黑名单/白名单。
+      #
+      # 与 SUSFS / BakaSU 无关，因此不放在 enable_susfs 条件里——之前那个条件
+      # 会让关闭 SUSFS 时这个安全修复也被一起跳过。
       - name: 应用 Unicode 绕过修复
-        if: ${{ inputs.clean_build != true && inputs.disable_bakasu != true && inputs.enable_susfs && !(inputs.android_version == 'android17' && inputs.kernel_version == '6.18') }}
+        if: ${{ inputs.clean_build != true && !(inputs.android_version == 'android17' && inputs.kernel_version == '6.18') }}
         working-directory: ${{ env.KERNEL_ROOT }}/common
         run: |
           if [ "${{ inputs.kernel_version }}" = "5.10" ] || [ "${{ inputs.kernel_version }}" = "5.15" ]; then
-            patch -p1 --forward < "$ACTION_BUILD/patches/unicode_bypass_fix_6.1-.patch" || true
+            UNICODE_PATCH="$ACTION_BUILD/patches/unicode_bypass_fix_6.1-.patch"
           else
-            patch -p1 --forward < "$ACTION_BUILD/patches/unicode_bypass_fix_6.1+.patch" || true
+            UNICODE_PATCH="$ACTION_BUILD/patches/unicode_bypass_fix_6.1+.patch"
+          fi
+
+          if [ ! -f "$UNICODE_PATCH" ]; then
+            echo "::warning::Unicode 绕过修复补丁不存在: $UNICODE_PATCH"
+            exit 0
+          fi
+
+          if patch -p1 --forward --dry-run < "$UNICODE_PATCH" >/dev/null 2>&1; then
+            patch -p1 --forward < "$UNICODE_PATCH"
+            echo "✅ Unicode 绕过修复已应用"
+          elif patch -p1 --reverse --dry-run < "$UNICODE_PATCH" >/dev/null 2>&1; then
+            echo "✅ Unicode 绕过修复已存在，跳过"
+          else
+            echo "::warning::Unicode 绕过修复与当前源码不匹配，未能应用（不中断构建）"
+            echo "--- 补丁前 40 行 ---"
+            head -40 "$UNICODE_PATCH"
           fi
 
       # ==================== 升级 LZ4 并应用 LZ4KD/LZ4K_OPLUS 补丁 ====================
