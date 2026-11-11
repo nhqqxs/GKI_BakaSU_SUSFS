@@ -1,0 +1,230 @@
+diff --git a/fs/namei.c b/fs/namei.c
+--- a/fs/namei.c
++++ b/fs/namei.c
+@@ -41,6 +41,150 @@
+ #include <linux/uaccess.h>
+ 
+ #include "internal.h"
++
++#include <linux/cred.h>
++#include <linux/string.h>
++/*
++ * ADP (Android private dir Privacy) - marker: ADP_HIDE_OTHER_PRIVATE
++ *
++ * 阻止普通 app 感知 /storage/emulated/0/Android/{data,obb} 下其他 app 的
++ * 私有目录。
++ *
++ * mkdir() 返回 EEXIST、stat() 成功、access(X_OK) 成功，根子都在路径解析阶段
++ * 拿到了真实的 positive inode（Android/data、Android/obb 下的包目录一般是
++ * 0771，others 有 x 可穿越，而 stat/access 并不需要目标 inode 自身的权限）。
++ * 因此在 lookup 层统一判为不存在：mkdir 会自然落到 may_create() 的权限检查，
++ * 返回与"真不存在"一致的 EACCES；stat/access/open 则直接 ENOENT。
++ *
++ * 只对 app uid（>= 10000）生效：root(0)、shell(2000)、system(1000)、
++ * media_rw(1023) 等不受影响，root 权限的文件管理器仍可正常访问。
++ */
++#define ADP_APP_UID_MIN 10000
++
++/*
++ * 诊断开关（默认关闭）。
++ *
++ * 取消下面那行注释即可在命中 data/obb 父目录时打印前 40 条判定详情，
++ * 用于排查"补丁是否生效 / uid 与目录名是否匹配"：
++ *
++ *   #define ADP_DEBUG 1
++ *
++ * 注意：pr_info 是 KERN_INFO（级别 6），需要 root 读取且 console loglevel
++ * 允许才能看到，普通 app 下 dmesg 可能是空的：
++ *   su -c 'dmesg | grep ADP'
++ */
++/* #define ADP_DEBUG 1 */
++
++/*
++ * Android/data、Android/obb 下各包目录的 gid 通常是 1078
++ * （AID_EXT_DATA_RW），属于该组的进程就是 Android 明确授予
++ * "可访问 Android/data" 的合法调用者：应用商店、文件管理器、installd 等。
++ * 注意 external_storage(1077) 是另一回事，普通 app 也可能带上，
++ * 不能用来判定，这里只认 1078。
++ */
++#define ADP_EXT_DATA_RW_GID 1078
++
++/*
++ * 兜底白名单：个别系统组件不走 1078 组授权，按进程名放行。
++ * current->comm 只有 16 字节（含结尾 0），包名会被截断，用前缀匹配。
++ *   com.xiaomi.market      -> "com.xiaomi.mark"
++ *   com.android.vending    -> "com.android.vend"
++ * 遇到新的系统组件被误伤时，往这里加一条即可。
++ */
++static const char * const adp_exempt_procs[] = {
++	"com.xiaomi.mark",
++	"com.android.vend",
++	"com.xiaomi.discover",
++	NULL,
++};
++
++static inline bool adp_is_exempt(void)
++{
++	const char * const *p;
++
++	if (in_group_p(KGIDT_INIT(ADP_EXT_DATA_RW_GID)))
++		return true;
++
++	for (p = adp_exempt_procs; *p; p++)
++		if (!strncmp(current->comm, *p, strlen(*p)))
++			return true;
++
++	return false;
++}
++
++static inline bool adp_hide_other_private(struct dentry *parent,
++					  struct dentry *dentry)
++{
++	struct inode *inode;
++	struct dentry *gp;
++	uid_t uid = current_uid().val;
++
++	if (adp_is_exempt())
++		return false;
++
++#ifdef ADP_DEBUG
++	{
++		static atomic_t adp_dbg_cnt = ATOMIC_INIT(0);
++		struct inode *di;
++
++		if (parent && dentry && !IS_ERR(dentry) &&
++		    ((parent->d_name.len == 4 && !memcmp(parent->d_name.name, "data", 4)) ||
++		     (parent->d_name.len == 3 && !memcmp(parent->d_name.name, "obb", 3))) &&
++		    atomic_inc_return(&adp_dbg_cnt) <= 40) {
++			di = d_backing_inode(dentry);
++			pr_info("ADP: pid=%d comm=%s cur_uid=%d tgt=%.*s parent=%.*s i_uid=%d magic=0x%lx\n",
++				current->pid, current->comm, (int)uid,
++				dentry->d_name.len, dentry->d_name.name,
++				parent->d_name.len, parent->d_name.name,
++				di ? (int)di->i_uid.val : -9999,
++				(di && di->i_sb) ? (unsigned long)di->i_sb->s_magic : 0UL);
++		}
++	}
++#endif
++
++	if (uid < ADP_APP_UID_MIN)
++		return false;
++
++	if (!dentry || IS_ERR(dentry))
++		return false;
++
++	inode = d_backing_inode(dentry);
++	if (!inode)
++		return false;
++
++	/*
++	 * 注意：这里刻意不校验 s_magic。
++	 * Android 11+ 的 /storage/emulated/0 由 FUSE 提供，但
++	 * Android/data、Android/obb 这两层对有全盘权限的 app 会 bind mount 到
++	 * /data/media/0/Android/{data,obb}（f2fs/ext4 真实分区），
++	 * stat -f 报的是 f2fs 而不是 fuse。早期版本按 FUSE_SUPER_MAGIC
++	 * 过滤会导致整条判断被跳过，防护完全失效。
++	 * 路径结构（父= data/obb，祖父= Android）本身已经足够精确定位，
++	 * 因此改由下面的目录名匹配来兜底，不再限定文件系统类型。
++	 */
++
++	/* 自己名下的目录 */
++	if (inode->i_uid.val == uid)
++		return false;
++
++	/* 目标必须也是 app 的私有目录 */
++	if (inode->i_uid.val < ADP_APP_UID_MIN)
++		return false;
++
++	/* 父目录必须是 Android/data 或 Android/obb */
++	if (!parent)
++		return false;
++	if (!(parent->d_name.len == 4 && !memcmp(parent->d_name.name, "data", 4)) &&
++	    !(parent->d_name.len == 3 && !memcmp(parent->d_name.name, "obb", 3)))
++		return false;
++
++	gp = parent->d_parent;
++	if (!gp || gp->d_name.len != 7 ||
++	    memcmp(gp->d_name.name, "Android", 7))
++		return false;
++
++	return true;
++}
+ #include "mount.h"
+ 
+ #define CREATE_TRACE_POINTS
+@@ -1510,6 +1654,10 @@
+ 			return ERR_PTR(error);
+ 		}
+ 	}
++	if (unlikely(adp_hide_other_private(dir, dentry))) {
++		dput(dentry);
++		return NULL;
++	}
+ 	return dentry;
+ }
+ 
+@@ -1542,6 +1690,10 @@
+ 	if (unlikely(old)) {
+ 		dput(dentry);
+ 		dentry = old;
++	}
++	if (unlikely(adp_hide_other_private(base, dentry))) {
++		dput(dentry);
++		return ERR_PTR(-EACCES);
+ 	}
+ 	return dentry;
+ }
+@@ -1561,6 +1713,9 @@
+ 	if (nd->flags & LOOKUP_RCU) {
+ 		unsigned seq;
+ 		dentry = __d_lookup_rcu(parent, &nd->last, &seq);
++		if (unlikely(dentry &&
++			     adp_hide_other_private(parent, dentry)))
++			return ERR_PTR(-ENOENT);
+ 		if (unlikely(!dentry)) {
+ 			if (!try_to_unlazy(nd))
+ 				return ERR_PTR(-ECHILD);
+@@ -1596,6 +1751,10 @@
+ 			status = d_revalidate(dentry, nd->flags);
+ 	} else {
+ 		dentry = __d_lookup(parent, &nd->last);
++		if (unlikely(adp_hide_other_private(parent, dentry))) {
++			dput(dentry);
++			return ERR_PTR(-ENOENT);
++		}
+ 		if (unlikely(!dentry))
+ 			return NULL;
+ 		status = d_revalidate(dentry, nd->flags);
+@@ -1643,6 +1802,10 @@
+ 			dput(dentry);
+ 			dentry = old;
+ 		}
++	}
++	if (unlikely(adp_hide_other_private(dir, dentry))) {
++		dput(dentry);
++		dentry = ERR_PTR(-ENOENT);
+ 	}
+ 	return dentry;
+ }
+@@ -3190,6 +3353,10 @@
+ 	}
+ 	if (dentry->d_inode) {
+ 		/* Cached positive dentry: will open in f_op->open */
++		if (unlikely(adp_hide_other_private(dir, dentry))) {
++			dput(dentry);
++			return ERR_PTR(-ENOENT);
++		}
+ 		return dentry;
+ 	}
+ 
+@@ -3251,6 +3418,10 @@
+ 	}
+ 	if (unlikely(create_error) && !dentry->d_inode) {
+ 		error = create_error;
++		goto out_dput;
++	}
++	if (unlikely(adp_hide_other_private(dir, dentry))) {
++		error = -ENOENT;
+ 		goto out_dput;
+ 	}
+ 	return dentry;
