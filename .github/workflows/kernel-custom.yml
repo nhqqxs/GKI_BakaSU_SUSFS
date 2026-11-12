@@ -140,16 +140,11 @@ on:
         required: false
         type: boolean
         default: false
-      apply_custom_patches:
-        description: "Apply custom patches in numeric filename order"
-        required: false
-        type: boolean
-        default: false
       custom_patch_selection:
-        description: "Allowed values example: all / 1,2 / 001,14,51-400,1919-810"
+        description: "自定义补丁选择：留空=不应用；填 all=全部；也可写 10-13 / 1,2 等序号"
         required: false
         type: string
-        default: "all"
+        default: ""
       apply_selected_patches:
         description: "true: only apply selected patches; false: skip selected patches"
         required: false
@@ -206,5 +201,5 @@ jobs:
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync || false }}
       use_nomount: ${{ inputs.use_nomount || false }}
       build_bypass: ${{ inputs.build_bypass || false }}
-      apply_custom_patches: ${{ inputs.apply_custom_patches || false }}
+      custom_patch_selection: ${{ inputs.custom_patch_selection || '' }}
       disable_werror: ${{ inputs.disable_werror || false }}
