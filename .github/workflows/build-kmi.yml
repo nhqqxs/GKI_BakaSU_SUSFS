@@ -22,11 +22,11 @@ on:
         required: false
         type: boolean
         default: true
-      kernel_filter:
-        description: "Optional kernel version filter, e.g. 6.6.66 or 6.6.X. Empty builds the whole KMI"
+      build_target:
+        description: "Build target: all / android12-5.10 / android12-5.10.272 (with version = that kernel only)"
         required: false
         type: string
-        default: ""
+        default: "all"
 
       # ==================== Build configuration ====================
       clean_build:
@@ -96,12 +96,46 @@ on:
         default: false
 
 jobs:
+  # 把 build_target 拆成「KMI 名 + 可选内核版本」：
+  #   all                  -> kernel_filter 为空（构建该 KMI 全部内核）
+  #   android12-5.10       -> kernel_filter 为空
+  #   android12-5.10.272   -> kernel_filter = 5.10.272
+  #   android12-5.10.X     -> kernel_filter = 5.10.X
+  # GitHub 表达式没有字符串分割，所以放在 shell 里做。
+  resolve-filter:
+    runs-on: ubuntu-latest
+    outputs:
+      kernel_filter: ${{ steps.parse.outputs.filter }}
+    steps:
+      - name: 解析 build_target
+        id: parse
+        env:
+          BUILD_TARGET: ${{ inputs.build_target }}
+        run: |
+          set -euo pipefail
+          BT="${BUILD_TARGET:-all}"
+          if [[ "$BT" == "all" ]]; then
+            # 全部 KMI，各自完整矩阵
+            echo "filter=" >> "$GITHUB_OUTPUT"
+          elif [[ "$BT" =~ ^android[0-9]+-([0-9]+\.[0-9]+)$ ]]; then
+            # android12-5.10 -> 该 KMI 的全部内核
+            echo "filter=" >> "$GITHUB_OUTPUT"
+          elif [[ "$BT" =~ ^android[0-9]+-([0-9]+\.[0-9]+\.[0-9]+|[0-9]+\.[0-9]+\.[xX])$ ]]; then
+            # android12-5.10.272 -> filter=5.10.272；android12-5.10.X -> filter=5.10.X
+            echo "filter=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::build_target 格式无效: $BT"
+            echo "  允许的取值: all / android12-5.10 / android12-5.10.272 / android12-5.10.X"
+            exit 1
+          fi
+
   prepare-matrix:
+    needs: resolve-filter
     uses: ./.github/workflows/prepare-matrix.yml
     with:
       data_file: ${{ inputs.data_file }}
       deduplicate_sublevels: ${{ inputs.deduplicate_sublevels }}
-      kernel_filter: ${{ inputs.kernel_filter }}
+      kernel_filter: ${{ needs.resolve-filter.outputs.kernel_filter }}
 
   build-kernels:
     needs: prepare-matrix
