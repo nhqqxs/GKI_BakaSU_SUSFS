@@ -97,10 +97,11 @@ on:
         required: false
         type: boolean
         default: false
-      apply_custom_patches:
+      custom_patch_selection:
+        description: "Custom patch selection; empty disables custom patches (e.g. all / 10-13 / 1,2)"
         required: false
-        type: boolean
-        default: false
+        type: string
+        default: ""
       disable_werror:
         required: false
         type: boolean
@@ -460,7 +461,7 @@ jobs:
       # ==================== 应用自定义内核补丁 ====================
       # 每个补丁文件可以包含多个 diff --git 文件段，整体检查和应用。
       - name: 按文件名前缀顺序应用自定义补丁
-        if: inputs.apply_custom_patches
+        if: inputs.custom_patch_selection != ''
         run: |
           cd "$KERNEL_ROOT/common"
           bash "$GITHUB_WORKSPACE/scripts/apply_custom_patches.sh" \
