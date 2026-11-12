@@ -86,10 +86,11 @@ on:
         required: false
         type: boolean
         default: false
-      apply_custom_patches:
+      custom_patch_selection:
+        description: "Custom patch selection; empty disables custom patches"
         required: false
-        type: boolean
-        default: false
+        type: string
+        default: ""
       disable_werror:
         required: false
         type: boolean
@@ -168,5 +169,5 @@ jobs:
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync || false }}
       use_nomount: ${{ inputs.use_nomount || false }}
       build_bypass: ${{ inputs.build_bypass || false }}
-      apply_custom_patches: ${{ inputs.apply_custom_patches || false }}
+      custom_patch_selection: ${{ inputs.custom_patch_selection || '' }}
       disable_werror: ${{ inputs.disable_werror || false }}
