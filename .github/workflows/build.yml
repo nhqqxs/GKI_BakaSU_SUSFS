@@ -1718,6 +1718,36 @@ jobs:
 
           cp "$SRC_DIR/Image" ./
 
+      # ==================== 打包 uid_guard 模块 ====================
+      # 注入器由 0014 补丁放进内核树（drivers/misc，obj-m），这里把编出的
+      # uid_guard_cfg.ko 与 nhqqxs/uid_guard 的模块文件打包成可直接刷入的 zip。
+      # 找不到 .ko（补丁未启用等）只告警，不影响内核产物。
+      - name: 打包 uid_guard 模块
+        run: |
+          set -uo pipefail
+
+          ko=$(find "${{ env.KERNEL_ROOT }}" -name uid_guard_cfg.ko -print -quit 2>/dev/null || true)
+          if [ -z "$ko" ]; then
+            echo "::warning::未找到 uid_guard_cfg.ko（0014 补丁可能未启用），跳过模块打包"
+            find "${{ env.KERNEL_ROOT }}" -name '*.ko' 2>/dev/null | head -20 || true
+            exit 0
+          fi
+
+          echo "找到注入器: $ko"
+          cp "$ko" "$GITHUB_WORKSPACE/uid_guard_cfg.ko"
+
+          rm -rf "$GITHUB_WORKSPACE/uid_guard_repo"
+          if ! git clone --depth=1 --quiet https://github.com/nhqqxs/uid_guard.git \
+                 "$GITHUB_WORKSPACE/uid_guard_repo"; then
+            echo "::warning::克隆 nhqqxs/uid_guard 失败，只保留 uid_guard_cfg.ko"
+            exit 0
+          fi
+
+          sh "$GITHUB_WORKSPACE/uid_guard_repo/build_module_zip.sh" \
+            "$GITHUB_WORKSPACE/uid_guard_cfg.ko"
+          cp "$GITHUB_WORKSPACE/uid_guard_repo"/uid_guard_*.zip "$GITHUB_WORKSPACE/"
+          ls -l "$GITHUB_WORKSPACE"/uid_guard_*.zip
+
       # ==================== 激活 Bypass 构建 ====================
       # Bypass 只放宽内核模块版本校验，普通 Image 始终保留为默认产物。
       - name: 激活 Bypass 内核补丁
@@ -1940,9 +1970,8 @@ jobs:
           name: ${{ env.BUILD_VARIANT }}_kernel-${{ env.CONFIG }}
           path: |
             ${{ env.ANYKERNEL3 }}/*
-#            *AnyKernel3.zip
-#            *.img
-#          compression-level: 0
+            ${{ github.workspace }}/uid_guard_*.zip
+            ${{ github.workspace }}/uid_guard_cfg.ko
 
       # ==================== 上传补丁冲突文件 ====================
       - name: 上传补丁冲突文件
