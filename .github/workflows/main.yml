@@ -134,7 +134,7 @@ on:
 
       # ==================== 构建版本选择 ====================
       build_target:
-        description: "Choose a build target: select one KMI per run, or build all"
+        description: "选择构建目标 KMI；选 all 时构建全部 8 个 KMI"
         type: choice
         options:
           - all
@@ -147,24 +147,11 @@ on:
           - android16-6.12
           - android17-6.18
         default: all
-      build_kernel_version:
-        description: "Build using the kernel version and selected KMI (takes precedence over the version selection above)"
-        type: boolean
-        default: false
       kernel_version_filter:
-        description: "Kernel version, e.g., 6.6.66 or 6.6.X (X is case-insensitive; a trailing X builds all subversions in that kernel series)"
+        description: "可选：限定内核版本，如 6.6.66 或 6.6.X。留空则构建 build_target 下的全部内核；填写时只构建该系列匹配的版本"
         type: string
         default: ""
         required: false
-      kernel_android_version:
-        description: "Select the Android KMI for 5.10/5.15; leave as auto for 6.1 and later"
-        type: choice
-        options:
-          - auto
-          - android12
-          - android13
-          - android14
-        default: auto
 
       # ==================== Bot-Push 选项 ====================
       change_log:
@@ -198,102 +185,16 @@ jobs:
           fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
-  select-kernel-version:
-    if: inputs.build_kernel_version
-    runs-on: ubuntu-latest
-    outputs:
-      data_file: ${{ steps.select.outputs.data_file }}
-      deduplicate_sublevels: ${{ steps.select.outputs.deduplicate_sublevels }}
-    steps:
-      - name: 定位内核版本数据
-        id: select
-        env:
-          KERNEL_FILTER: ${{ inputs.kernel_version_filter }}
-          ANDROID_CHOICE: ${{ inputs.kernel_android_version }}
-        run: |
-          if [[ ! "$KERNEL_FILTER" =~ ^([0-9]+\.[0-9]+)\.([0-9]+|[xX])$ ]]; then
-            echo "::error::内核版本格式应为 6.6.66 或 6.6.X"
-            exit 1
-          fi
-          kernel_series="${BASH_REMATCH[1]}"
-          case "$kernel_series" in
-            5.10)
-              if [[ "$ANDROID_CHOICE" != android12 && "$ANDROID_CHOICE" != android13 ]]; then
-                echo "::error::5.10 有 Android 12 和 13 两个 KMI，请明确选择 android12 或 android13"
-                exit 1
-              fi
-              deduplicate=false ;;
-            5.15)
-              if [[ "$ANDROID_CHOICE" != android13 && "$ANDROID_CHOICE" != android14 ]]; then
-                echo "::error::5.15 有 Android 13 和 14 两个 KMI，请明确选择 android13 或 android14"
-                exit 1
-              fi
-              deduplicate=true ;;
-            6.1) android_version=android14; deduplicate=true ;;
-            6.6) android_version=android15; deduplicate=true ;;
-            6.12) android_version=android16; deduplicate=true ;;
-            6.18) android_version=android17; deduplicate=true ;;
-            *) echo "::error::不支持的内核系列: ${BASH_REMATCH[1]}"; exit 1 ;;
-          esac
-          if [[ "$kernel_series" == 5.10 || "$kernel_series" == 5.15 ]]; then
-            data_file="data/$ANDROID_CHOICE/$kernel_series.json"
-          else
-            data_file="data/$android_version/$kernel_series.json"
-          fi
-          echo "data_file=$data_file" >> "$GITHUB_OUTPUT"
-          echo "deduplicate_sublevels=$deduplicate" >> "$GITHUB_OUTPUT"
-
-  prepare-selected-matrix:
-    needs: select-kernel-version
-    uses: ./.github/workflows/prepare-matrix.yml
-    with:
-      data_file: ${{ needs.select-kernel-version.outputs.data_file }}
-      deduplicate_sublevels: ${{ needs.select-kernel-version.outputs.deduplicate_sublevels == 'true' }}
-      kernel_filter: ${{ inputs.kernel_version_filter }}
-
-  build-selected-kernels:
-    needs: [prepare-selected-matrix, resolve-ksu-ref]
-    name: "${{ matrix.kernel_version }}.${{ matrix.sub_level }}-${{ matrix.android_version }}-${{ matrix.os_patch_level }}"
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.prepare-selected-matrix.outputs.matrix) }}
-    uses: ./.github/workflows/build.yml
-    secrets: inherit
-    with:
-      clean_build: ${{ inputs.clean_build }}
-      disable_bakasu: ${{ inputs.disable_bakasu }}
-      android_version: ${{ matrix.android_version }}
-      kernel_version: ${{ matrix.kernel_version }}
-      sub_level: ${{ matrix.sub_level }}
-      os_patch_level: ${{ matrix.os_patch_level }}
-      revision: ${{ matrix.revision || '' }}
-      ksu_variant: ${{ inputs.clean_build && 'Clean' || inputs.disable_bakasu && 'NoKSU' || 'BakaSU' }}
-      ksu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
-      version: ${{ inputs.version || '' }}
-      build_time: ${{ inputs.build_time || '' }}
-      use_zram_lz4: ${{ inputs.use_zram == 'lz4-1.10' || inputs.use_zram == 'all' }}
-      use_zram_all: ${{ inputs.use_zram == 'all' }}
-      use_bbg: ${{ inputs.use_bbg }}
-      use_rekernel: ${{ inputs.use_rekernel || false }}
-      supp_op: ${{ inputs.supp_op }}
-      enable_susfs: ${{ !inputs.cancel_susfs && !inputs.disable_bakasu }}
-      droidspaces: ${{ inputs.droidspaces || 'off' }}
-      droidspaces_ntsync: ${{ inputs.droidspaces_ntsync || false }}
-      use_nomount: ${{ inputs.use_nomount || false }}
-      build_bypass: ${{ inputs.build_bypass || false }}
-      apply_custom_patches: ${{ inputs.apply_custom_patches }}
-      disable_werror: ${{ inputs.disable_werror }}
-
   # ==================== Android 12 - 5.10 构建 ====================
   build-a12-5-10:
-    if: ${{ !inputs.build_kernel_version && (inputs.build_target == 'android12-5.10' || inputs.build_target == 'all') }}
+    if: ${{ (inputs.build_target == 'android12-5.10' || inputs.build_target == 'all') && (inputs.kernel_version_filter == '' || startsWith(inputs.kernel_version_filter, '5.10.')) }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
       data_file: data/android12/5.10.json
       deduplicate_sublevels: false
+      kernel_filter: ${{ inputs.kernel_version_filter }}
       clean_build: ${{ inputs.clean_build }}
       disable_bakasu: ${{ inputs.disable_bakasu }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
@@ -314,13 +215,14 @@ jobs:
 
   # ==================== Android 13 - 5.10 构建 ====================
   build-a13-5-10:
-    if: ${{ !inputs.build_kernel_version && (inputs.build_target == 'android13-5.10' || inputs.build_target == 'all') }}
+    if: ${{ (inputs.build_target == 'android13-5.10' || inputs.build_target == 'all') && (inputs.kernel_version_filter == '' || startsWith(inputs.kernel_version_filter, '5.10.')) }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
       data_file: data/android13/5.10.json
       deduplicate_sublevels: false
+      kernel_filter: ${{ inputs.kernel_version_filter }}
       clean_build: ${{ inputs.clean_build }}
       disable_bakasu: ${{ inputs.disable_bakasu }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
@@ -341,13 +243,14 @@ jobs:
 
   # ==================== Android 13 - 5.15 构建 ====================
   build-a13-5-15:
-    if: ${{ !inputs.build_kernel_version && (inputs.build_target == 'android13-5.15' || inputs.build_target == 'all') }}
+    if: ${{ (inputs.build_target == 'android13-5.15' || inputs.build_target == 'all') && (inputs.kernel_version_filter == '' || startsWith(inputs.kernel_version_filter, '5.15.')) }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
       data_file: data/android13/5.15.json
       deduplicate_sublevels: true
+      kernel_filter: ${{ inputs.kernel_version_filter }}
       clean_build: ${{ inputs.clean_build }}
       disable_bakasu: ${{ inputs.disable_bakasu }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
@@ -368,13 +271,14 @@ jobs:
 
   # ==================== Android 14 - 5.15 构建 ====================
   build-a14-5-15:
-    if: ${{ !inputs.build_kernel_version && (inputs.build_target == 'android14-5.15' || inputs.build_target == 'all') }}
+    if: ${{ (inputs.build_target == 'android14-5.15' || inputs.build_target == 'all') && (inputs.kernel_version_filter == '' || startsWith(inputs.kernel_version_filter, '5.15.')) }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
       data_file: data/android14/5.15.json
       deduplicate_sublevels: true
+      kernel_filter: ${{ inputs.kernel_version_filter }}
       clean_build: ${{ inputs.clean_build }}
       disable_bakasu: ${{ inputs.disable_bakasu }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
@@ -395,13 +299,14 @@ jobs:
 
   # ==================== Android 14 - 6.1 构建 ====================
   build-a14-6-1:
-    if: ${{ !inputs.build_kernel_version && (inputs.build_target == 'android14-6.1' || inputs.build_target == 'all') }}
+    if: ${{ (inputs.build_target == 'android14-6.1' || inputs.build_target == 'all') && (inputs.kernel_version_filter == '' || startsWith(inputs.kernel_version_filter, '6.1.')) }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
       data_file: data/android14/6.1.json
       deduplicate_sublevels: true
+      kernel_filter: ${{ inputs.kernel_version_filter }}
       clean_build: ${{ inputs.clean_build }}
       disable_bakasu: ${{ inputs.disable_bakasu }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
@@ -422,13 +327,14 @@ jobs:
 
   # ==================== Android 15 - 6.6 构建 ====================
   build-a15-6-6:
-    if: ${{ !inputs.build_kernel_version && (inputs.build_target == 'android15-6.6' || inputs.build_target == 'all') }}
+    if: ${{ (inputs.build_target == 'android15-6.6' || inputs.build_target == 'all') && (inputs.kernel_version_filter == '' || startsWith(inputs.kernel_version_filter, '6.6.')) }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
       data_file: data/android15/6.6.json
       deduplicate_sublevels: true
+      kernel_filter: ${{ inputs.kernel_version_filter }}
       clean_build: ${{ inputs.clean_build }}
       disable_bakasu: ${{ inputs.disable_bakasu }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
@@ -449,13 +355,14 @@ jobs:
 
   # ==================== Android 16 - 6.12 构建 ====================
   build-a16-6-12:
-    if: ${{ !inputs.build_kernel_version && (inputs.build_target == 'android16-6.12' || inputs.build_target == 'all') }}
+    if: ${{ (inputs.build_target == 'android16-6.12' || inputs.build_target == 'all') && (inputs.kernel_version_filter == '' || startsWith(inputs.kernel_version_filter, '6.12.')) }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
       data_file: data/android16/6.12.json
       deduplicate_sublevels: true
+      kernel_filter: ${{ inputs.kernel_version_filter }}
       clean_build: ${{ inputs.clean_build }}
       disable_bakasu: ${{ inputs.disable_bakasu }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
@@ -476,13 +383,14 @@ jobs:
 
   # ==================== Android 17 - 6.18 构建 ====================
   build-a17-6-18:
-    if: ${{ !inputs.build_kernel_version && (inputs.build_target == 'android17-6.18' || inputs.build_target == 'all') }}
+    if: ${{ (inputs.build_target == 'android17-6.18' || inputs.build_target == 'all') && (inputs.kernel_version_filter == '' || startsWith(inputs.kernel_version_filter, '6.18.')) }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
       data_file: data/android17/6.18.json
       deduplicate_sublevels: true
+      kernel_filter: ${{ inputs.kernel_version_filter }}
       clean_build: ${{ inputs.clean_build }}
       disable_bakasu: ${{ inputs.disable_bakasu }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
@@ -507,7 +415,6 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     needs:
-      - build-selected-kernels
       - build-a12-5-10
       - build-a13-5-10
       - build-a13-5-15
@@ -548,7 +455,7 @@ jobs:
   # 当 release_type 不是 Actions 时，创建 GitHub Release
   # 仅限原仓库运行，fork 仓库跳过此步骤
   release:
-    if: ${{ always() && !cancelled() && needs.resolve-ksu-ref.result == 'success' && !inputs.build_kernel_version && inputs.release_type != 'Actions' && github.repository == 'zhuzhuzihan/GKI_BakaSU_SUSFS' }}
+    if: ${{ always() && !cancelled() && needs.resolve-ksu-ref.result == 'success' && inputs.release_type != 'Actions' && github.repository == 'zhuzhuzihan/GKI_BakaSU_SUSFS' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
