@@ -106,14 +106,10 @@ on:
         description: "Enable NoMount mount support (requires the companion module)"
         type: boolean
         default: false
-      apply_custom_patches:
-        description: "Apply custom patches in numeric filename order"
-        type: boolean
-        default: false
       custom_patch_selection:
-        description: "Allowed values example: all / 1,2 / 001,14,51-400,1919-810"
+        description: "自定义补丁选择：留空=不应用；填 all=全部；也可写 10-13 / 1,2 等序号"
         type: string
-        default: "all"
+        default: ""
         required: false
       apply_selected_patches:
         description: "true: only apply selected patches; false: skip selected patches"
@@ -228,7 +224,7 @@ jobs:
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
       use_nomount: ${{ inputs.use_nomount }}
       build_bypass: ${{ inputs.build_bypass }}
-      apply_custom_patches: ${{ inputs.apply_custom_patches }}
+      custom_patch_selection: ${{ inputs.custom_patch_selection }}
       disable_werror: ${{ inputs.disable_werror }}
 
   # ==================== Android 13 - 5.10 构建 ====================
@@ -256,7 +252,7 @@ jobs:
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
       use_nomount: ${{ inputs.use_nomount }}
       build_bypass: ${{ inputs.build_bypass }}
-      apply_custom_patches: ${{ inputs.apply_custom_patches }}
+      custom_patch_selection: ${{ inputs.custom_patch_selection }}
       disable_werror: ${{ inputs.disable_werror }}
 
   # ==================== Android 13 - 5.15 构建 ====================
@@ -284,7 +280,7 @@ jobs:
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
       use_nomount: ${{ inputs.use_nomount }}
       build_bypass: ${{ inputs.build_bypass }}
-      apply_custom_patches: ${{ inputs.apply_custom_patches }}
+      custom_patch_selection: ${{ inputs.custom_patch_selection }}
       disable_werror: ${{ inputs.disable_werror }}
 
   # ==================== Android 14 - 5.15 构建 ====================
@@ -312,7 +308,7 @@ jobs:
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
       use_nomount: ${{ inputs.use_nomount }}
       build_bypass: ${{ inputs.build_bypass }}
-      apply_custom_patches: ${{ inputs.apply_custom_patches }}
+      custom_patch_selection: ${{ inputs.custom_patch_selection }}
       disable_werror: ${{ inputs.disable_werror }}
 
   # ==================== Android 14 - 6.1 构建 ====================
@@ -340,7 +336,7 @@ jobs:
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
       use_nomount: ${{ inputs.use_nomount }}
       build_bypass: ${{ inputs.build_bypass }}
-      apply_custom_patches: ${{ inputs.apply_custom_patches }}
+      custom_patch_selection: ${{ inputs.custom_patch_selection }}
       disable_werror: ${{ inputs.disable_werror }}
 
   # ==================== Android 15 - 6.6 构建 ====================
@@ -368,7 +364,7 @@ jobs:
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
       use_nomount: ${{ inputs.use_nomount }}
       build_bypass: ${{ inputs.build_bypass }}
-      apply_custom_patches: ${{ inputs.apply_custom_patches }}
+      custom_patch_selection: ${{ inputs.custom_patch_selection }}
       disable_werror: ${{ inputs.disable_werror }}
 
   # ==================== Android 16 - 6.12 构建 ====================
@@ -396,7 +392,7 @@ jobs:
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
       use_nomount: ${{ inputs.use_nomount }}
       build_bypass: ${{ inputs.build_bypass }}
-      apply_custom_patches: ${{ inputs.apply_custom_patches }}
+      custom_patch_selection: ${{ inputs.custom_patch_selection }}
       disable_werror: ${{ inputs.disable_werror }}
 
   # ==================== Android 17 - 6.18 构建 ====================
@@ -424,7 +420,7 @@ jobs:
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync }}
       use_nomount: ${{ inputs.use_nomount }}
       build_bypass: ${{ inputs.build_bypass }}
-      apply_custom_patches: ${{ inputs.apply_custom_patches }}
+      custom_patch_selection: ${{ inputs.custom_patch_selection }}
       disable_werror: ${{ inputs.disable_werror }}
 
   # ==================== 收集补丁冲突文件 ====================
