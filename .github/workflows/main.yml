@@ -47,7 +47,7 @@ on:
       version:
         description: "Custom version name (optional)"
         type: string
-        default: "-android12-9-00019-g4ea09a298bb4-ab12292661"
+        default: "5.10.209-android12-9-00019-g4ea09a298bb4-ab12292661"
         required: false
       build_time:
         description: "Custom build time (optional; enter N or leave blank to use the current UTC time)"
