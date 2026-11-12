@@ -134,24 +134,10 @@ on:
 
       # ==================== 构建版本选择 ====================
       build_target:
-        description: "选择构建目标 KMI；选 all 时构建全部 8 个 KMI"
-        type: choice
-        options:
-          - all
-          - android12-5.10
-          - android13-5.10
-          - android13-5.15
-          - android14-5.15
-          - android14-6.1
-          - android15-6.6
-          - android16-6.12
-          - android17-6.18
-        default: all
-      kernel_version_filter:
-        description: "可选：限定内核版本，如 6.6.66 或 6.6.X。留空则构建 build_target 下的全部内核；填写时只构建该系列匹配的版本"
+        description: "构建目标：all / android12-5.10 / android12-5.10.272（带完整版本号则只构建该内核；末段可用 X 通配）"
         type: string
-        default: ""
-        required: false
+        default: "all"
+        required: true
 
       # ==================== Bot-Push 选项 ====================
       change_log:
@@ -187,14 +173,14 @@ jobs:
 
   # ==================== Android 12 - 5.10 构建 ====================
   build-a12-5-10:
-    if: ${{ (inputs.build_target == 'android12-5.10' || inputs.build_target == 'all') && (inputs.kernel_version_filter == '' || startsWith(inputs.kernel_version_filter, '5.10.')) }}
+    if: ${{ inputs.build_target == 'all' || inputs.build_target == 'android12-5.10' || startsWith(inputs.build_target, 'android12-5.10.') }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
       data_file: data/android12/5.10.json
       deduplicate_sublevels: false
-      kernel_filter: ${{ inputs.kernel_version_filter }}
+      build_target: ${{ inputs.build_target }}
       clean_build: ${{ inputs.clean_build }}
       disable_bakasu: ${{ inputs.disable_bakasu }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
@@ -215,14 +201,14 @@ jobs:
 
   # ==================== Android 13 - 5.10 构建 ====================
   build-a13-5-10:
-    if: ${{ (inputs.build_target == 'android13-5.10' || inputs.build_target == 'all') && (inputs.kernel_version_filter == '' || startsWith(inputs.kernel_version_filter, '5.10.')) }}
+    if: ${{ inputs.build_target == 'all' || inputs.build_target == 'android13-5.10' || startsWith(inputs.build_target, 'android13-5.10.') }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
       data_file: data/android13/5.10.json
       deduplicate_sublevels: false
-      kernel_filter: ${{ inputs.kernel_version_filter }}
+      build_target: ${{ inputs.build_target }}
       clean_build: ${{ inputs.clean_build }}
       disable_bakasu: ${{ inputs.disable_bakasu }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
@@ -243,14 +229,14 @@ jobs:
 
   # ==================== Android 13 - 5.15 构建 ====================
   build-a13-5-15:
-    if: ${{ (inputs.build_target == 'android13-5.15' || inputs.build_target == 'all') && (inputs.kernel_version_filter == '' || startsWith(inputs.kernel_version_filter, '5.15.')) }}
+    if: ${{ inputs.build_target == 'all' || inputs.build_target == 'android13-5.15' || startsWith(inputs.build_target, 'android13-5.15.') }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
       data_file: data/android13/5.15.json
       deduplicate_sublevels: true
-      kernel_filter: ${{ inputs.kernel_version_filter }}
+      build_target: ${{ inputs.build_target }}
       clean_build: ${{ inputs.clean_build }}
       disable_bakasu: ${{ inputs.disable_bakasu }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
@@ -271,14 +257,14 @@ jobs:
 
   # ==================== Android 14 - 5.15 构建 ====================
   build-a14-5-15:
-    if: ${{ (inputs.build_target == 'android14-5.15' || inputs.build_target == 'all') && (inputs.kernel_version_filter == '' || startsWith(inputs.kernel_version_filter, '5.15.')) }}
+    if: ${{ inputs.build_target == 'all' || inputs.build_target == 'android14-5.15' || startsWith(inputs.build_target, 'android14-5.15.') }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
       data_file: data/android14/5.15.json
       deduplicate_sublevels: true
-      kernel_filter: ${{ inputs.kernel_version_filter }}
+      build_target: ${{ inputs.build_target }}
       clean_build: ${{ inputs.clean_build }}
       disable_bakasu: ${{ inputs.disable_bakasu }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
@@ -299,14 +285,14 @@ jobs:
 
   # ==================== Android 14 - 6.1 构建 ====================
   build-a14-6-1:
-    if: ${{ (inputs.build_target == 'android14-6.1' || inputs.build_target == 'all') && (inputs.kernel_version_filter == '' || startsWith(inputs.kernel_version_filter, '6.1.')) }}
+    if: ${{ inputs.build_target == 'all' || inputs.build_target == 'android14-6.1' || startsWith(inputs.build_target, 'android14-6.1.') }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
       data_file: data/android14/6.1.json
       deduplicate_sublevels: true
-      kernel_filter: ${{ inputs.kernel_version_filter }}
+      build_target: ${{ inputs.build_target }}
       clean_build: ${{ inputs.clean_build }}
       disable_bakasu: ${{ inputs.disable_bakasu }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
@@ -327,14 +313,14 @@ jobs:
 
   # ==================== Android 15 - 6.6 构建 ====================
   build-a15-6-6:
-    if: ${{ (inputs.build_target == 'android15-6.6' || inputs.build_target == 'all') && (inputs.kernel_version_filter == '' || startsWith(inputs.kernel_version_filter, '6.6.')) }}
+    if: ${{ inputs.build_target == 'all' || inputs.build_target == 'android15-6.6' || startsWith(inputs.build_target, 'android15-6.6.') }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
       data_file: data/android15/6.6.json
       deduplicate_sublevels: true
-      kernel_filter: ${{ inputs.kernel_version_filter }}
+      build_target: ${{ inputs.build_target }}
       clean_build: ${{ inputs.clean_build }}
       disable_bakasu: ${{ inputs.disable_bakasu }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
@@ -355,14 +341,14 @@ jobs:
 
   # ==================== Android 16 - 6.12 构建 ====================
   build-a16-6-12:
-    if: ${{ (inputs.build_target == 'android16-6.12' || inputs.build_target == 'all') && (inputs.kernel_version_filter == '' || startsWith(inputs.kernel_version_filter, '6.12.')) }}
+    if: ${{ inputs.build_target == 'all' || inputs.build_target == 'android16-6.12' || startsWith(inputs.build_target, 'android16-6.12.') }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
       data_file: data/android16/6.12.json
       deduplicate_sublevels: true
-      kernel_filter: ${{ inputs.kernel_version_filter }}
+      build_target: ${{ inputs.build_target }}
       clean_build: ${{ inputs.clean_build }}
       disable_bakasu: ${{ inputs.disable_bakasu }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
@@ -383,14 +369,14 @@ jobs:
 
   # ==================== Android 17 - 6.18 构建 ====================
   build-a17-6-18:
-    if: ${{ (inputs.build_target == 'android17-6.18' || inputs.build_target == 'all') && (inputs.kernel_version_filter == '' || startsWith(inputs.kernel_version_filter, '6.18.')) }}
+    if: ${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android17-6.18') || startsWith(inputs.build_target, 'android17-6.18.') }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
     with:
       data_file: data/android17/6.18.json
       deduplicate_sublevels: true
-      kernel_filter: ${{ inputs.kernel_version_filter }}
+      build_target: ${{ inputs.build_target }}
       clean_build: ${{ inputs.clean_build }}
       disable_bakasu: ${{ inputs.disable_bakasu }}
       kernelsu_branch: ${{ needs.resolve-ksu-ref.outputs.sha || 'main' }}
@@ -477,9 +463,9 @@ jobs:
       REPO_NAME: ${{ github.event.repository.name }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MODE: ${{ inputs.clean_build && 'Clean' || inputs.disable_bakasu && 'NoKSU' || 'BakaSU' }}
-      NOTIFY_SUSFS_STATUS: ${{ inputs.clean_build != true && inputs.disable_bakasu != true && inputs.cancel_susfs != true && inputs.build_target == 'android17-6.18' && 'auto-skipped (Android 17/6.18)' || inputs.clean_build != true && inputs.disable_bakasu != true && inputs.cancel_susfs != true && inputs.build_target == 'all' && 'enabled (Android 17/6.18 auto-skipped)' || inputs.clean_build != true && inputs.disable_bakasu != true && inputs.cancel_susfs != true && 'true' || 'false' }}
-      NOTIFY_ZRAM_STATUS: ${{ inputs.clean_build != true && inputs.use_zram && inputs.build_target == 'android17-6.18' && 'auto-skipped (Android 17/6.18)' || inputs.clean_build != true && inputs.use_zram && inputs.build_target == 'all' && 'enabled (Android 17/6.18 auto-skipped)' || inputs.clean_build != true && inputs.use_zram && 'true' || 'false' }}
-      NOTIFY_REKERNEL_STATUS: ${{ inputs.clean_build != true && inputs.use_rekernel && inputs.build_target == 'android17-6.18' && 'auto-skipped (Android 17/6.18)' || inputs.clean_build != true && inputs.use_rekernel && inputs.build_target == 'all' && 'enabled (Android 17/6.18 auto-skipped)' || inputs.clean_build != true && inputs.use_rekernel && 'true' || 'false' }}
+      NOTIFY_SUSFS_STATUS: ${{ inputs.clean_build != true && inputs.disable_bakasu != true && inputs.cancel_susfs != true && startsWith(inputs.build_target, 'android17-6.18') && 'auto-skipped (Android 17/6.18)' || inputs.clean_build != true && inputs.disable_bakasu != true && inputs.cancel_susfs != true && inputs.build_target == 'all' && 'enabled (Android 17/6.18 auto-skipped)' || inputs.clean_build != true && inputs.disable_bakasu != true && inputs.cancel_susfs != true && 'true' || 'false' }}
+      NOTIFY_ZRAM_STATUS: ${{ inputs.clean_build != true && inputs.use_zram && startsWith(inputs.build_target, 'android17-6.18') && 'auto-skipped (Android 17/6.18)' || inputs.clean_build != true && inputs.use_zram && inputs.build_target == 'all' && 'enabled (Android 17/6.18 auto-skipped)' || inputs.clean_build != true && inputs.use_zram && 'true' || 'false' }}
+      NOTIFY_REKERNEL_STATUS: ${{ inputs.clean_build != true && inputs.use_rekernel && startsWith(inputs.build_target, 'android17-6.18') && 'auto-skipped (Android 17/6.18)' || inputs.clean_build != true && inputs.use_rekernel && inputs.build_target == 'all' && 'enabled (Android 17/6.18 auto-skipped)' || inputs.clean_build != true && inputs.use_rekernel && 'true' || 'false' }}
 
     steps:
       # ==================== 设置显示名称 ====================
@@ -505,7 +491,7 @@ jobs:
             LZ4_STATUS="${{ inputs.use_zram && '开启' || '未开启' }}"
             LZ4_SUFFIX="${{ inputs.use_zram && '、LZ4KD' || '' }}"
             if [ "${{ inputs.use_zram }}" = "true" ]; then
-              if [ "${{ inputs.build_target }}" = "android17-6.18" ]; then
+              if [[ "${{ inputs.build_target }}" == android17-6.18* ]]; then
                 LZ4_STATUS="Android17/6.18 自动跳过"
                 LZ4_SUFFIX=""
               elif [ "${{ inputs.build_target }}" = "all" ]; then
@@ -525,7 +511,7 @@ jobs:
               fi
               echo "HOOK_TYPE=" >> "$GITHUB_ENV"
               echo "MOUNT_TYPE=" >> "$GITHUB_ENV"
-            elif [ "${{ inputs.build_target }}" = "android17-6.18" ]; then
+            elif [[ "${{ inputs.build_target }}" == android17-6.18* ]]; then
               RELEASE_NAME="GKI内核: ${KSU_NAME}"
               echo "SUSFS_SUFFIX=" >> "$GITHUB_ENV"
               echo "SUSFS_STATUS=Android17/6.18 自动跳过（上游分支暂缺）" >> "$GITHUB_ENV"
@@ -543,7 +529,7 @@ jobs:
               echo "MOUNT_TYPE=-> Magic Mount 支持" >> "$GITHUB_ENV"
             fi
 
-            if [ "${{ inputs.build_target }}" = "all" ] || [ "${{ inputs.build_target }}" = "android17-6.18" ]; then
+            if [[ "${{ inputs.build_target }}" == "all" || "${{ inputs.build_target }}" == android17-6.18* ]]; then
               echo "COMPATIBILITY_NOTE=Android 17 / 6.18 自动跳过 SUSFS、ZRAM/LZ4KD、NTSync、Re-Kernel、一加 8E 专用补丁。" >> "$GITHUB_ENV"
             fi
 
@@ -567,14 +553,14 @@ jobs:
               failed=1
             fi
           }
-          check_build "${{ inputs.build_target == 'android12-5.10' || inputs.build_target == 'all' }}" "build-a12-5-10" "${{ needs.build-a12-5-10.result }}"
-          check_build "${{ inputs.build_target == 'android13-5.10' || inputs.build_target == 'all' }}" "build-a13-5-10" "${{ needs.build-a13-5-10.result }}"
-          check_build "${{ inputs.build_target == 'android13-5.15' || inputs.build_target == 'all' }}" "build-a13-5-15" "${{ needs.build-a13-5-15.result }}"
-          check_build "${{ inputs.build_target == 'android14-5.15' || inputs.build_target == 'all' }}" "build-a14-5-15" "${{ needs.build-a14-5-15.result }}"
-          check_build "${{ inputs.build_target == 'android14-6.1' || inputs.build_target == 'all' }}" "build-a14-6-1" "${{ needs.build-a14-6-1.result }}"
-          check_build "${{ inputs.build_target == 'android15-6.6' || inputs.build_target == 'all' }}" "build-a15-6-6" "${{ needs.build-a15-6-6.result }}"
-          check_build "${{ inputs.build_target == 'android16-6.12' || inputs.build_target == 'all' }}" "build-a16-6-12" "${{ needs.build-a16-6-12.result }}"
-          check_build "${{ inputs.build_target == 'android17-6.18' || inputs.build_target == 'all' }}" "build-a17-6-18" "${{ needs.build-a17-6-18.result }}"
+          check_build "${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android12-5.10') }}" "build-a12-5-10" "${{ needs.build-a12-5-10.result }}"
+          check_build "${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android13-5.10') }}" "build-a13-5-10" "${{ needs.build-a13-5-10.result }}"
+          check_build "${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android13-5.15') }}" "build-a13-5-15" "${{ needs.build-a13-5-15.result }}"
+          check_build "${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android14-5.15') }}" "build-a14-5-15" "${{ needs.build-a14-5-15.result }}"
+          check_build "${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android14-6.1') }}" "build-a14-6-1" "${{ needs.build-a14-6-1.result }}"
+          check_build "${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android15-6.6') }}" "build-a15-6-6" "${{ needs.build-a15-6-6.result }}"
+          check_build "${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android16-6.12') }}" "build-a16-6-12" "${{ needs.build-a16-6-12.result }}"
+          check_build "${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android17-6.18') }}" "build-a17-6-18" "${{ needs.build-a17-6-18.result }}"
           [[ "$failed" -ne 0 ]] && exit 1 || true
 
       - name: 检出代码
@@ -771,7 +757,7 @@ jobs:
             SUS_VERSION="clean"
           elif [ "${{ inputs.disable_bakasu }}" = "true" ]; then
             SUS_VERSION="no-bakasu"
-          elif [ "${{ inputs.build_target }}" = "android17-6.18" ]; then
+          elif [[ "${{ inputs.build_target }}" == android17-6.18* ]]; then
             SUS_VERSION="no-susfs"
           else
             SUSFS_INFO_URL="https://gitlab.com/simonpunk/susfs4ksu/-/raw/gki-android14-6.1/ksu_module_susfs/module.prop?ref_type=heads"
@@ -879,7 +865,7 @@ jobs:
           BBG = ${{ inputs.clean_build != true && inputs.use_bbg && 'true' || 'false' }}
           LZ4KD = $NOTIFY_ZRAM_STATUS
           Re-Kernel = $NOTIFY_REKERNEL_STATUS
-          Droidspaces = ${{ inputs.clean_build && 'off' || inputs.droidspaces }}${{ inputs.clean_build != true && inputs.build_target != 'android17-6.18' && inputs.droidspaces_ntsync && ' + NTSync' || '' }}
+          Droidspaces = ${{ inputs.clean_build && 'off' || inputs.droidspaces }}${{ inputs.clean_build != true && !startsWith(inputs.build_target, 'android17-6.18') && inputs.droidspaces_ntsync && ' + NTSync' || '' }}
           KPatch-Next Support = ${{ inputs.clean_build != true && inputs.disable_bakasu != true && 'true' || 'false' }}</pre>
           Change Log: 
           <pre>${INPUT_CHANGE_LOG}
@@ -923,7 +909,7 @@ jobs:
           BBG = ${{ inputs.clean_build != true && inputs.use_bbg && 'true' || 'false' }}
           LZ4KD = $NOTIFY_ZRAM_STATUS
           Re-Kernel = $NOTIFY_REKERNEL_STATUS
-          Droidspaces = ${{ inputs.clean_build && 'off' || inputs.droidspaces }}${{ inputs.clean_build != true && inputs.build_target != 'android17-6.18' && inputs.droidspaces_ntsync && ' + NTSync' || '' }}
+          Droidspaces = ${{ inputs.clean_build && 'off' || inputs.droidspaces }}${{ inputs.clean_build != true && !startsWith(inputs.build_target, 'android17-6.18') && inputs.droidspaces_ntsync && ' + NTSync' || '' }}
           KPatch-Next Support = ${{ inputs.clean_build != true && inputs.disable_bakasu != true && 'true' || 'false' }}</pre>
           Change Log: 
           <pre>${INPUT_CHANGE_LOG}
