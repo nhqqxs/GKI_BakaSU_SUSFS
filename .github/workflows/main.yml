@@ -47,12 +47,12 @@ on:
       version:
         description: "Custom version name (optional)"
         type: string
-        default: ""
+        default: "-android12-9-00019-g4ea09a298bb4-ab12292661"
         required: false
       build_time:
         description: "Custom build time (optional; enter N or leave blank to use the current UTC time)"
         type: string
-        default: "Sun Dec 01 08:10:00 UTC 2024"
+        default: "Wed Aug 28 22:16:09 UTC 2024"
         required: false
       droidspaces:
         description: "Droidspaces container support (5.10-6.6: slot patch options; 6.12+: on/off)"
@@ -93,11 +93,11 @@ on:
           - "none"
           - "lz4-1.10"
           - "all"
-        default: "none"
+        default: "lz4-1.10"
       use_bbg:
         description: "Enable the BBG anti-brick patch"
         type: boolean
-        default: false
+        default: true
       use_rekernel:
         description: "Enable Re-Kernel drivers"
         type: boolean
@@ -109,7 +109,7 @@ on:
       custom_patch_selection:
         description: "自定义补丁选择：留空=不应用；填 all=全部；也可写 10-13 / 1,2 等序号"
         type: string
-        default: ""
+        default: "all"
         required: false
       apply_selected_patches:
         description: "true: only apply selected patches; false: skip selected patches"
