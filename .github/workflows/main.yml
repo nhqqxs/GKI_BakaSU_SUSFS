@@ -171,9 +171,41 @@ jobs:
           fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
+  # ==================== 校验 build_target 格式 ====================
+  # 无条件运行。build_target 是自由字符串后，非法值会让 8 个构建 job 的 if
+  # 全部为 false，最后 workflow 显示「成功」却什么都没构建。这里提前拦掉。
+  validate-target:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 校验 build_target
+        env:
+          BUILD_TARGET: ${{ inputs.build_target }}
+        run: |
+          set -euo pipefail
+          BT="${BUILD_TARGET:-}"
+          if [[ -z "$BT" || "$BT" == "all" ]]; then
+            echo "build_target = ${BT:-<空，按 all 处理>}"
+            exit 0
+          fi
+          if [[ "$BT" =~ ^android[0-9]+-[0-9]+\.[0-9]+$ ]]; then
+            echo "build_target = $BT（该 KMI 的全部内核）"
+            exit 0
+          fi
+          if [[ "$BT" =~ ^android[0-9]+-[0-9]+\.[0-9]+\.([0-9]+|[xX])$ ]]; then
+            echo "build_target = $BT（限定内核版本）"
+            exit 0
+          fi
+          echo "::error::build_target 格式无效: $BT"
+          echo "可用写法："
+          echo "  all                  构建全部 8 个 KMI"
+          echo "  android12-5.10       该 KMI 的全部内核"
+          echo "  android12-5.10.272   该 KMI 的指定内核"
+          echo "  android12-5.10.X     该 KMI 该系列的全部内核（X 通配）"
+          exit 1
+
   # ==================== Android 12 - 5.10 构建 ====================
   build-a12-5-10:
-    if: ${{ inputs.build_target == 'all' || inputs.build_target == 'android12-5.10' || startsWith(inputs.build_target, 'android12-5.10.') }}
+    if: ${{ inputs.build_target == '' || inputs.build_target == 'all' || inputs.build_target == 'android12-5.10' || startsWith(inputs.build_target, 'android12-5.10.') }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
@@ -201,7 +233,7 @@ jobs:
 
   # ==================== Android 13 - 5.10 构建 ====================
   build-a13-5-10:
-    if: ${{ inputs.build_target == 'all' || inputs.build_target == 'android13-5.10' || startsWith(inputs.build_target, 'android13-5.10.') }}
+    if: ${{ inputs.build_target == '' || inputs.build_target == 'all' || inputs.build_target == 'android13-5.10' || startsWith(inputs.build_target, 'android13-5.10.') }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
@@ -229,7 +261,7 @@ jobs:
 
   # ==================== Android 13 - 5.15 构建 ====================
   build-a13-5-15:
-    if: ${{ inputs.build_target == 'all' || inputs.build_target == 'android13-5.15' || startsWith(inputs.build_target, 'android13-5.15.') }}
+    if: ${{ inputs.build_target == '' || inputs.build_target == 'all' || inputs.build_target == 'android13-5.15' || startsWith(inputs.build_target, 'android13-5.15.') }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
@@ -257,7 +289,7 @@ jobs:
 
   # ==================== Android 14 - 5.15 构建 ====================
   build-a14-5-15:
-    if: ${{ inputs.build_target == 'all' || inputs.build_target == 'android14-5.15' || startsWith(inputs.build_target, 'android14-5.15.') }}
+    if: ${{ inputs.build_target == '' || inputs.build_target == 'all' || inputs.build_target == 'android14-5.15' || startsWith(inputs.build_target, 'android14-5.15.') }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
@@ -285,7 +317,7 @@ jobs:
 
   # ==================== Android 14 - 6.1 构建 ====================
   build-a14-6-1:
-    if: ${{ inputs.build_target == 'all' || inputs.build_target == 'android14-6.1' || startsWith(inputs.build_target, 'android14-6.1.') }}
+    if: ${{ inputs.build_target == '' || inputs.build_target == 'all' || inputs.build_target == 'android14-6.1' || startsWith(inputs.build_target, 'android14-6.1.') }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
@@ -313,7 +345,7 @@ jobs:
 
   # ==================== Android 15 - 6.6 构建 ====================
   build-a15-6-6:
-    if: ${{ inputs.build_target == 'all' || inputs.build_target == 'android15-6.6' || startsWith(inputs.build_target, 'android15-6.6.') }}
+    if: ${{ inputs.build_target == '' || inputs.build_target == 'all' || inputs.build_target == 'android15-6.6' || startsWith(inputs.build_target, 'android15-6.6.') }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
@@ -341,7 +373,7 @@ jobs:
 
   # ==================== Android 16 - 6.12 构建 ====================
   build-a16-6-12:
-    if: ${{ inputs.build_target == 'all' || inputs.build_target == 'android16-6.12' || startsWith(inputs.build_target, 'android16-6.12.') }}
+    if: ${{ inputs.build_target == '' || inputs.build_target == 'all' || inputs.build_target == 'android16-6.12' || startsWith(inputs.build_target, 'android16-6.12.') }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
@@ -369,7 +401,7 @@ jobs:
 
   # ==================== Android 17 - 6.18 构建 ====================
   build-a17-6-18:
-    if: ${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android17-6.18') || startsWith(inputs.build_target, 'android17-6.18.') }}
+    if: ${{ inputs.build_target == '' || inputs.build_target == 'all' || inputs.build_target == 'android17-6.18' || startsWith(inputs.build_target, 'android17-6.18.') }}
     needs: resolve-ksu-ref
     uses: ./.github/workflows/build-kmi.yml
     secrets: inherit
@@ -553,14 +585,14 @@ jobs:
               failed=1
             fi
           }
-          check_build "${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android12-5.10') }}" "build-a12-5-10" "${{ needs.build-a12-5-10.result }}"
-          check_build "${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android13-5.10') }}" "build-a13-5-10" "${{ needs.build-a13-5-10.result }}"
-          check_build "${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android13-5.15') }}" "build-a13-5-15" "${{ needs.build-a13-5-15.result }}"
-          check_build "${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android14-5.15') }}" "build-a14-5-15" "${{ needs.build-a14-5-15.result }}"
-          check_build "${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android14-6.1') }}" "build-a14-6-1" "${{ needs.build-a14-6-1.result }}"
-          check_build "${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android15-6.6') }}" "build-a15-6-6" "${{ needs.build-a15-6-6.result }}"
-          check_build "${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android16-6.12') }}" "build-a16-6-12" "${{ needs.build-a16-6-12.result }}"
-          check_build "${{ inputs.build_target == 'all' || startsWith(inputs.build_target, 'android17-6.18') }}" "build-a17-6-18" "${{ needs.build-a17-6-18.result }}"
+          check_build "${{ inputs.build_target == '' || inputs.build_target == 'all' || inputs.build_target == 'android12-5.10' || startsWith(inputs.build_target, 'android12-5.10.') }}" "build-a12-5-10" "${{ needs.build-a12-5-10.result }}"
+          check_build "${{ inputs.build_target == '' || inputs.build_target == 'all' || inputs.build_target == 'android13-5.10' || startsWith(inputs.build_target, 'android13-5.10.') }}" "build-a13-5-10" "${{ needs.build-a13-5-10.result }}"
+          check_build "${{ inputs.build_target == '' || inputs.build_target == 'all' || inputs.build_target == 'android13-5.15' || startsWith(inputs.build_target, 'android13-5.15.') }}" "build-a13-5-15" "${{ needs.build-a13-5-15.result }}"
+          check_build "${{ inputs.build_target == '' || inputs.build_target == 'all' || inputs.build_target == 'android14-5.15' || startsWith(inputs.build_target, 'android14-5.15.') }}" "build-a14-5-15" "${{ needs.build-a14-5-15.result }}"
+          check_build "${{ inputs.build_target == '' || inputs.build_target == 'all' || inputs.build_target == 'android14-6.1' || startsWith(inputs.build_target, 'android14-6.1.') }}" "build-a14-6-1" "${{ needs.build-a14-6-1.result }}"
+          check_build "${{ inputs.build_target == '' || inputs.build_target == 'all' || inputs.build_target == 'android15-6.6' || startsWith(inputs.build_target, 'android15-6.6.') }}" "build-a15-6-6" "${{ needs.build-a15-6-6.result }}"
+          check_build "${{ inputs.build_target == '' || inputs.build_target == 'all' || inputs.build_target == 'android16-6.12' || startsWith(inputs.build_target, 'android16-6.12.') }}" "build-a16-6-12" "${{ needs.build-a16-6-12.result }}"
+          check_build "${{ inputs.build_target == '' || inputs.build_target == 'all' || inputs.build_target == 'android17-6.18' || startsWith(inputs.build_target, 'android17-6.18.') }}" "build-a17-6-18" "${{ needs.build-a17-6-18.result }}"
           [[ "$failed" -ne 0 ]] && exit 1 || true
 
       - name: 检出代码
