@@ -1534,6 +1534,19 @@ jobs:
 
           # 配置内核名称
           if [ -n "${{ inputs.version }}" ]; then
+            # version 有两种写法：
+            #   1) 完整版本串（X.Y.Z 开头，如 5.10.209-android12-9-00019-g...）
+            #      -> 直接接管 Makefile 的 filechk_kernel.release，
+            #         uname -r 完全等于该字符串，LINUX_VERSION_CODE 保持真实值
+            #   2) 仅后缀（如 -android12-9-00019-g...）
+            #      -> 沿用下面原有的 setlocalversion / LOCALVERSION 注入
+            if [[ "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+              echo "配置内核名称: 完整版本串，接管 UTS_RELEASE"
+              python3 "$GITHUB_WORKSPACE/scripts/set_uts_release.py" \
+                ./common/Makefile "${{ inputs.version }}"
+              # setlocalversion 不再被调用，清掉 defconfig 里的 LOCALVERSION 避免残留
+              sed -i '/^CONFIG_LOCALVERSION=/ s/="[^"]*"/=""/' ./common/arch/arm64/configs/gki_defconfig 2>/dev/null || true
+            else
             CLEAN_VERSION=$(echo "${{ inputs.version }}" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+//')
             
             # 定义 KMI_TAG（与自动版本保持一致）
@@ -1557,6 +1570,7 @@ jobs:
               # 6.6+：新格式 setlocalversion，包含 KMI_TAG
               SUFFIX="-${KMI_TAG}${CLEAN_VERSION}"
               perl -i -0777 -pe 's/(.*)echo "\$\{KERNELVERSION\}\$\{file_localversion\}\$\{config_localversion\}\$\{LOCALVERSION\}\$\{scm_version\}"/$1echo "\$\{KERNELVERSION\}'"${SUFFIX}"'"/s' ./common/scripts/setlocalversion 2>/dev/null || true
+            fi
             fi
           elif [ ! -f "build/build.sh" ]; then
             cd ./common
