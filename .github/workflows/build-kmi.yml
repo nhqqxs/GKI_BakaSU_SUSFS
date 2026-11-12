@@ -22,6 +22,11 @@ on:
         required: false
         type: boolean
         default: true
+      kernel_filter:
+        description: "Optional kernel version filter, e.g. 6.6.66 or 6.6.X. Empty builds the whole KMI"
+        required: false
+        type: string
+        default: ""
 
       # ==================== Build configuration ====================
       clean_build:
@@ -96,6 +101,7 @@ jobs:
     with:
       data_file: ${{ inputs.data_file }}
       deduplicate_sublevels: ${{ inputs.deduplicate_sublevels }}
+      kernel_filter: ${{ inputs.kernel_filter }}
 
   build-kernels:
     needs: prepare-matrix
