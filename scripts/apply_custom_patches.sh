@@ -38,25 +38,10 @@ esac
 if [[ -z "${CUSTOM_PATCH_SELECTION:-}" &&
       -n "${GITHUB_EVENT_PATH:-}" &&
       -f "$GITHUB_EVENT_PATH" ]]; then
-  CUSTOM_PATCH_SELECTION="$(jq -r '.inputs.custom_patch_selection // "all"' "$GITHUB_EVENT_PATH")"
+  CUSTOM_PATCH_SELECTION="$(jq -r '.inputs.custom_patch_selection // ""' "$GITHUB_EVENT_PATH")"
 fi
-CUSTOM_PATCH_SELECTION="${CUSTOM_PATCH_SELECTION:-all}"
-
-if [[ -z "${APPLY_SELECTED_PATCHES:-}" &&
-      -n "${GITHUB_EVENT_PATH:-}" &&
-      -f "$GITHUB_EVENT_PATH" ]]; then
-  APPLY_SELECTED_PATCHES="$(jq -r '(.inputs.apply_selected_patches // true) | tostring' "$GITHUB_EVENT_PATH")"
-fi
-APPLY_SELECTED_PATCHES="${APPLY_SELECTED_PATCHES:-true}"
-
-case "$APPLY_SELECTED_PATCHES" in
-  true|false)
-    ;;
-  *)
-    echo "::error::APPLY_SELECTED_PATCHES 只能设置为 true 或 false: $APPLY_SELECTED_PATCHES" >&2
-    exit 2
-    ;;
-esac
+# 用 - 而不是 :-，否则空字符串会被替换成默认值，失去「空 = 不应用」的语义
+CUSTOM_PATCH_SELECTION="${CUSTOM_PATCH_SELECTION-}"
 
 normalize_sequence() {
   local sequence="$1"
@@ -83,18 +68,32 @@ decimal_le() {
   [[ "$left" == "$right" || "$left" < "$right" ]]
 }
 
-declare -a SELECTION_STARTS=()
-declare -a SELECTION_ENDS=()
+declare -a INCLUDE_STARTS=()
+declare -a INCLUDE_ENDS=()
+declare -a EXCLUDE_STARTS=()
+declare -a EXCLUDE_ENDS=()
 SELECTION_ALL=false
+SELECTION_EMPTY=false
+HAS_INCLUDE=false
+HAS_EXCLUDE=false
 
-if [[ "$CUSTOM_PATCH_SELECTION" == "all" ]]; then
+# custom_patch_selection 的取值规则：
+#   空            -> 不应用任何自定义补丁
+#   all           -> 应用全部
+#   3 / 10-13     -> 只应用这些序号（白名单，优先级最高）
+#   -3 / -10--13  -> 应用全部，但跳过这些序号（黑名单）
+#                    负数范围也接受 -10~-13 写法
+# 同时出现正数和负数时，正数优先，负数被忽略。
+
+if [[ -z "$CUSTOM_PATCH_SELECTION" ]]; then
+  SELECTION_EMPTY=true
+elif [[ "$CUSTOM_PATCH_SELECTION" == "all" ]]; then
   SELECTION_ALL=true
 else
-  if [[ -z "$CUSTOM_PATCH_SELECTION" ||
-        "$CUSTOM_PATCH_SELECTION" == ,* ||
+  if [[ "$CUSTOM_PATCH_SELECTION" == ,* ||
         "$CUSTOM_PATCH_SELECTION" == *, ||
         "$CUSTOM_PATCH_SELECTION" == *,,* ||
-        "$CUSTOM_PATCH_SELECTION" == *[[:space:]]* ]]; then
+        "$CUSTOM_PATCH_SELECTION" =~ [[:space:]] ]]; then
     echo "::error::补丁序号格式无效: $CUSTOM_PATCH_SELECTION" >&2
     exit 2
   fi
@@ -106,14 +105,36 @@ else
   fi
 
   for selection_item in "${SELECTION_ITEMS[@]}"; do
-    if [[ "$selection_item" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+    selection_kind=""
+    selection_start=""
+    selection_end=""
+
+    # 负数范围：-10--13 或 -10~-13 或 -10~13
+    if [[ "$selection_item" =~ ^-([0-9]+)--([0-9]+)$ ]]; then
+      selection_kind="exclude"
       selection_start="$(normalize_sequence "${BASH_REMATCH[1]}")"
       selection_end="$(normalize_sequence "${BASH_REMATCH[2]}")"
+    elif [[ "$selection_item" =~ ^-([0-9]+)~-?([0-9]+)$ ]]; then
+      selection_kind="exclude"
+      selection_start="$(normalize_sequence "${BASH_REMATCH[1]}")"
+      selection_end="$(normalize_sequence "${BASH_REMATCH[2]}")"
+    # 单个负数：-3
+    elif [[ "$selection_item" =~ ^-([0-9]+)$ ]]; then
+      selection_kind="exclude"
+      selection_start="$(normalize_sequence "${BASH_REMATCH[1]}")"
+      selection_end="$selection_start"
+    # 正数范围：10-13
+    elif [[ "$selection_item" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+      selection_kind="include"
+      selection_start="$(normalize_sequence "${BASH_REMATCH[1]}")"
+      selection_end="$(normalize_sequence "${BASH_REMATCH[2]}")"
+    # 单个正数：3
     elif [[ "$selection_item" =~ ^[0-9]+$ ]]; then
+      selection_kind="include"
       selection_start="$(normalize_sequence "$selection_item")"
       selection_end="$selection_start"
     else
-      echo "::error::补丁序号格式无效: $selection_item" >&2
+      echo "::error::补丁序号格式无效: $selection_item（正数=只应用，负数=跳过）" >&2
       exit 2
     fi
 
@@ -122,27 +143,72 @@ else
       exit 2
     fi
 
-    SELECTION_STARTS+=("$selection_start")
-    SELECTION_ENDS+=("$selection_end")
+    if [[ "$selection_kind" == "include" ]]; then
+      HAS_INCLUDE=true
+      INCLUDE_STARTS+=("$selection_start")
+      INCLUDE_ENDS+=("$selection_end")
+    else
+      HAS_EXCLUDE=true
+      EXCLUDE_STARTS+=("$selection_start")
+      EXCLUDE_ENDS+=("$selection_end")
+    fi
   done
 fi
 
-sequence_is_selected() {
-  local sequence_key
-  local selection_index
+# 序号是否落在给定范围数组内（用于白名单/黑名单）
+sequence_in_ranges() {
+  local sequence_key="$1"
+  local range_mode="$2"
+  local range_index
 
-  sequence_key="$(normalize_sequence "$1")"
+  sequence_key="$(normalize_sequence "$sequence_key")"
 
-  if [[ "$SELECTION_ALL" == "true" ]]; then
+  if [[ "$range_mode" == "include" ]]; then
+    for range_index in "${!INCLUDE_STARTS[@]}"; do
+      if decimal_le "${INCLUDE_STARTS[$range_index]}" "$sequence_key" &&
+         decimal_le "$sequence_key" "${INCLUDE_ENDS[$range_index]}"; then
+        return 0
+      fi
+    done
+  else
+    for range_index in "${!EXCLUDE_STARTS[@]}"; do
+      if decimal_le "${EXCLUDE_STARTS[$range_index]}" "$sequence_key" &&
+         decimal_le "$sequence_key" "${EXCLUDE_ENDS[$range_index]}"; then
+        return 0
+      fi
+    done
+  fi
+
+  return 1
+}
+
+# 最终判定：该序号的补丁是否应该应用
+sequence_should_apply() {
+  local sequence_key="$1"
+
+  # 空 -> 一律不应用
+  if [[ "$SELECTION_EMPTY" == "true" ]]; then
+    return 1
+  fi
+
+  # 含正数编号时，正数优先级最高，只应用列出的序号
+  if [[ "$HAS_INCLUDE" == "true" ]]; then
+    sequence_in_ranges "$sequence_key" include
+    return $?
+  fi
+
+  # 只有负数编号时，从全部中排除
+  if [[ "$HAS_EXCLUDE" == "true" ]]; then
+    if sequence_in_ranges "$sequence_key" exclude; then
+      return 1
+    fi
     return 0
   fi
 
-  for selection_index in "${!SELECTION_STARTS[@]}"; do
-    if decimal_le "${SELECTION_STARTS[$selection_index]}" "$sequence_key" &&
-       decimal_le "$sequence_key" "${SELECTION_ENDS[$selection_index]}"; then
-      return 0
-    fi
-  done
+  # all
+  if [[ "$SELECTION_ALL" == "true" ]]; then
+    return 0
+  fi
 
   return 1
 }
@@ -269,11 +335,15 @@ for PATCH_FILE in "${PATCH_FILES[@]}"; do
 done
 
 echo "当前内核版本: $CURRENT_VERSION"
-echo "补丁序号筛选: $CUSTOM_PATCH_SELECTION"
-if [[ "$APPLY_SELECTED_PATCHES" == "true" ]]; then
-  echo "筛选模式: 仅应用所选序号"
+echo "补丁序号筛选: ${CUSTOM_PATCH_SELECTION:-<空>}"
+if [[ "$SELECTION_EMPTY" == "true" ]]; then
+  echo "筛选模式: 不应用任何补丁（序号筛选为空）"
+elif [[ "$HAS_INCLUDE" == "true" ]]; then
+  echo "筛选模式: 仅应用选中序号（正数优先，负数忽略）"
+elif [[ "$HAS_EXCLUDE" == "true" ]]; then
+  echo "筛选模式: 应用全部，跳过选中序号"
 else
-  echo "筛选模式: 跳过所选序号"
+  echo "筛选模式: 应用全部（all）"
 fi
 echo "跳过失败补丁: $SKIP_FAILED_CUSTOM_PATCHES"
 echo "发现 ${#PATCH_FILES[@]} 个自定义补丁，已完成文件名、版本范围和顺序检查。"
@@ -386,21 +456,16 @@ for index in "${!PATCH_FILES[@]}"; do
     continue
   fi
 
-  if sequence_is_selected "$SEQUENCE"; then
-    SEQUENCE_SELECTED=true
-  else
-    SEQUENCE_SELECTED=false
-  fi
-
-  if [[ "$APPLY_SELECTED_PATCHES" == "true" && "$SEQUENCE_SELECTED" != "true" ]] ||
-     [[ "$APPLY_SELECTED_PATCHES" == "false" && "$SEQUENCE_SELECTED" == "true" ]]; then
+  if ! sequence_should_apply "$SEQUENCE"; then
     echo "::group::跳过自定义补丁（序号筛选）: $PATCH_NAME"
     echo "顺序号: $SEQUENCE"
     echo "当前内核版本: $CURRENT_VERSION"
-    if [[ "$APPLY_SELECTED_PATCHES" == "true" ]]; then
-      echo "跳过原因: 当前模式只应用输入框中选择的补丁序号。"
+    if [[ "$SELECTION_EMPTY" == "true" ]]; then
+      echo "跳过原因: custom_patch_selection 为空，不应用任何自定义补丁。"
+    elif [[ "$HAS_INCLUDE" == "true" ]]; then
+      echo "跳过原因: 该序号不在 custom_patch_selection 的正数名单内。"
     else
-      echo "跳过原因: 当前补丁序号位于输入框指定的跳过范围内。"
+      echo "跳过原因: 该序号位于 custom_patch_selection 的负数跳过名单内。"
     fi
     echo "======================================================================"
     echo "::endgroup::"
