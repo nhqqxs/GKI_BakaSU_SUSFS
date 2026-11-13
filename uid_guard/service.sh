@@ -97,22 +97,45 @@ if lsmod 2>/dev/null | grep -q '^uid_guard_cfg'; then
 	rmmod uid_guard_cfg 2>/dev/null
 fi
 
-if ! insmod "$KO" uids="$LIST" 2>>"$LOG"; then
-	# ksud 不一定在 PATH 里（KernelSU 放在 /data/adb/ksu/bin 下），
-	# 所以按常见位置逐个找，别只信 command -v。
-	KSUD=""
-	for cand in "$MODDIR/../ksu/bin/ksud" /data/adb/ksu/bin/ksud /data/adb/ksud; do
-		if [ -x "$cand" ]; then
-			KSUD="$cand"
-			break
-		fi
-	done
-	if [ -n "$KSUD" ]; then
-		"$KSUD" insmod "$KO" uids="$LIST" 2>>"$LOG" ||
-			echo "insmod failed (ksud: $KSUD)" >> "$LOG"
-	else
-		echo "insmod failed (no ksud found)" >> "$LOG"
+# 加载顺序：先 ksud，再 insmod。
+#
+# 实测（5.10 GKI，CONFIG_TRIM_UNUSED_KSYMS=y）toybox 的 insmod 必定失败：
+#   insmod: can't insert '...': unknown symbol in module, or unknown parameter
+#   uid_guard_cfg: Unknown symbol uid_guard_set (err -2)
+# 但紧接着用 ksud insmod 同一条命令就能加载成功，模块进入 Live 且名单注入
+# 生效。既然裸 insmod 只会在日志里留一条误导性的错误，就把它放到后面兜底。
+KSUD=""
+for cand in "$MODDIR/../ksu/bin/ksud" /data/adb/ksu/bin/ksud /data/adb/ksud; do
+	if [ -x "$cand" ]; then
+		KSUD="$cand"
+		break
 	fi
+done
+
+loaded=0
+
+if [ -n "$KSUD" ]; then
+	if "$KSUD" insmod "$KO" uids="$LIST" 2>>"$LOG"; then
+		loaded=1
+		echo "loaded via ksud: $KSUD" >> "$LOG"
+	else
+		echo "ksud insmod failed: $KSUD" >> "$LOG"
+	fi
+else
+	echo "ksud not found, falling back to insmod" >> "$LOG"
+fi
+
+if [ "$loaded" -eq 0 ]; then
+	if insmod "$KO" uids="$LIST" 2>>"$LOG"; then
+		loaded=1
+		echo "loaded via insmod" >> "$LOG"
+	else
+		echo "insmod failed (both ksud and insmod)" >> "$LOG"
+	fi
+fi
+
+if [ "$loaded" -eq 1 ]; then
+	echo "uid_guard active, $LIST" >> "$LOG"
 fi
 
 # 注入完成后可以选择卸载配置模块，进一步减少常驻痕迹。
