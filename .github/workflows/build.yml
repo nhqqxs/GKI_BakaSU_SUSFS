@@ -1719,34 +1719,44 @@ jobs:
           cp "$SRC_DIR/Image" ./
 
       # ==================== 打包 uid_guard 模块 ====================
-      # 注入器由 0014 补丁放进内核树（drivers/misc，obj-m），这里把编出的
-      # uid_guard_cfg.ko 与 nhqqxs/uid_guard 的模块文件打包成可直接刷入的 zip。
+      # 注入器由 0014 补丁放进内核树（drivers/misc，obj-m）。这里只准备模块目录，
+      # 不在这里打 zip：artifact 本身会被平台包一层 zip，直接上传目录内容后，
+      # 下载得到的 zip 根目录就是 module.prop/service.sh/...，可以直接刷入。
       # 找不到 .ko（补丁未启用等）只告警，不影响内核产物。
-      - name: 打包 uid_guard 模块
+      - name: 准备 uid_guard 模块
         run: |
           set -uo pipefail
 
           ko=$(find "${{ env.KERNEL_ROOT }}" -name uid_guard_cfg.ko -print -quit 2>/dev/null || true)
           if [ -z "$ko" ]; then
-            echo "::warning::未找到 uid_guard_cfg.ko（0014 补丁可能未启用），跳过模块打包"
+            echo "::warning::未找到 uid_guard_cfg.ko（0014 补丁可能未启用），跳过模块产物"
             find "${{ env.KERNEL_ROOT }}" -name '*.ko' 2>/dev/null | head -20 || true
             exit 0
           fi
 
           echo "找到注入器: $ko"
-          cp "$ko" "$GITHUB_WORKSPACE/uid_guard_cfg.ko"
 
           rm -rf "$GITHUB_WORKSPACE/uid_guard_repo"
           if ! git clone --depth=1 --quiet https://github.com/nhqqxs/uid_guard.git \
                  "$GITHUB_WORKSPACE/uid_guard_repo"; then
-            echo "::warning::克隆 nhqqxs/uid_guard 失败，只保留 uid_guard_cfg.ko"
+            echo "::warning::克隆 nhqqxs/uid_guard 失败，跳过模块产物"
             exit 0
           fi
 
-          sh "$GITHUB_WORKSPACE/uid_guard_repo/build_module_zip.sh" \
-            "$GITHUB_WORKSPACE/uid_guard_cfg.ko"
-          cp "$GITHUB_WORKSPACE/uid_guard_repo"/uid_guard_*.zip "$GITHUB_WORKSPACE/"
-          ls -l "$GITHUB_WORKSPACE"/uid_guard_*.zip
+          MOD="$GITHUB_WORKSPACE/uid_guard_module"
+          rm -rf "$MOD"
+          mkdir -p "$MOD/ko"
+          cp "$GITHUB_WORKSPACE/uid_guard_repo/module/module.prop" \
+             "$GITHUB_WORKSPACE/uid_guard_repo/module/customize.sh" \
+             "$GITHUB_WORKSPACE/uid_guard_repo/module/service.sh" \
+             "$GITHUB_WORKSPACE/uid_guard_repo/module/pkgs.conf" "$MOD/"
+          cp "$ko" "$MOD/ko/uid_guard_cfg.ko"
+
+          chmod 0755 "$MOD/customize.sh" "$MOD/service.sh"
+          chmod 0644 "$MOD/module.prop" "$MOD/pkgs.conf" "$MOD/ko/uid_guard_cfg.ko"
+
+          find "$MOD" -type f -printf '%m  %p\n'
+          echo "UID_GUARD_READY=1" >> "$GITHUB_ENV"
 
       # ==================== 激活 Bypass 构建 ====================
       # Bypass 只放宽内核模块版本校验，普通 Image 始终保留为默认产物。
@@ -1872,11 +1882,6 @@ jobs:
           
           echo "ANYKERNEL3=$ANYKERNEL3" >> $GITHUB_ENV
 
-          # 打成一个真正的 zip（之前这行被注释，artifact 里只有散文件）
-          rm -f "../$ZIP_NAME"
-          zip -r "../$ZIP_NAME" ./*
-          ls -l "../$ZIP_NAME"
-
       # ==================== 构建 Boot 镜像 (Android 12) ====================
       # Android 12 需要从 GKI 认证镜像中提取 ramdisk
 #      - name: 构建 Boot 镜像 (Android 12)
@@ -1967,14 +1972,22 @@ jobs:
       # ==================== 上传构建产物 ====================
       # AnyKernel3 包本身已是 zip，upload-artifact 会再套一层 zip 容器
       # compression-level=0 关闭外层压缩，避免对已压缩的 AK3 二次压缩
-      - name: 上传构建产物
+      # AK3：直接上传目录内容。artifact 会被平台再包一层 zip，下载后根目录就是
+      # anykernel.sh / Image / tools/，本身就是一个可直接刷入的 AnyKernel3 包。
+      - name: 上传 AnyKernel3
         uses: actions/upload-artifact@v6
         with:
           name: ${{ env.BUILD_VARIANT }}_kernel-${{ env.CONFIG }}
-          path: |
-            ${{ github.workspace }}/*-AnyKernel3.zip
-            ${{ github.workspace }}/uid_guard_*.zip
-            ${{ github.workspace }}/uid_guard_cfg.ko
+          path: ${{ env.ANYKERNEL3 }}/*
+
+      # uid_guard 模块：同理，根目录是 module.prop / service.sh / customize.sh /
+      # pkgs.conf / ko/uid_guard_cfg.ko，下载后可直接刷入。
+      - name: 上传 uid_guard 模块
+        if: env.UID_GUARD_READY == '1'
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.BUILD_VARIANT }}_kernel-${{ env.CONFIG }}-uid_guard
+          path: ${{ github.workspace }}/uid_guard_module/**
 
       # ==================== 上传补丁冲突文件 ====================
       - name: 上传补丁冲突文件
