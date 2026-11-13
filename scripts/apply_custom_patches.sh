@@ -580,19 +580,37 @@ for index in "${!PATCH_FILES[@]}"; do
     continue
   fi
 
+  # 先由 git apply 检查。它对上下文空行、行尾空白的处理比 patch 严格，
+  # 偶尔会把完全标准的补丁判成 does not apply（本地用同一份源码、同一份补丁
+  # 逐字节比对确认三个 hunk 都能落地，CI 上却失败）。因此 git 拒绝时回退到
+  # patch 再确认一次：patch 的普通正向 --dry-run 不涉及智能反转（那是 -R 的
+  # 行为），可以安全使用。
+  APPLY_WITH="git"
   if PATCH_CHECK_OUTPUT="$(git apply --verbose --check "$PATCH_FILE" 2>&1)"; then
     echo "$PATCH_CHECK_OUTPUT"
     echo "补丁检查通过。"
   else
     PATCH_EXIT_CODE=$?
-    if ! log_patch_failure \
-      "预检查" \
-      "$PATCH_EXIT_CODE" \
-      "git apply --verbose --check $PATCH_FILE" \
-      "$PATCH_CHECK_OUTPUT"; then
-      exit 1
+    if PATCH_FALLBACK_CHECK="$(patch -p1 --forward --dry-run \
+        --no-backup-if-mismatch < "$PATCH_FILE" 2>&1)"; then
+      echo "----------------------------------------------------------------------"
+      echo "git apply 判定不适用，但 patch 可以做正向应用，改用 patch。"
+      echo "git apply 的输出："
+      echo "$PATCH_CHECK_OUTPUT"
+      echo "patch --dry-run 的输出："
+      echo "$PATCH_FALLBACK_CHECK"
+      echo "----------------------------------------------------------------------"
+      APPLY_WITH="patch"
+    else
+      if ! log_patch_failure \
+        "预检查" \
+        "$PATCH_EXIT_CODE" \
+        "git apply --verbose --check $PATCH_FILE" \
+        "$PATCH_CHECK_OUTPUT"$'\n\n'"patch -p1 --forward --dry-run 同样失败："$'\n'"$PATCH_FALLBACK_CHECK"; then
+        exit 1
+      fi
+      continue
     fi
-    continue
   fi
 
   PATCH_SNAPSHOT_DIR="$SNAPSHOT_DIR/$index"
@@ -616,7 +634,15 @@ for index in "${!PATCH_FILES[@]}"; do
     fi
   done
 
-  if PATCH_APPLY_OUTPUT="$(git apply --verbose "$PATCH_FILE" 2>&1)"; then
+  if [[ "$APPLY_WITH" == "patch" ]]; then
+    APPLY_CMD=(patch -p1 --forward --no-backup-if-mismatch)
+    APPLY_LABEL="patch -p1 --forward"
+  else
+    APPLY_CMD=(git apply --verbose)
+    APPLY_LABEL="git apply --verbose"
+  fi
+
+  if PATCH_APPLY_OUTPUT="$("${APPLY_CMD[@]}" < "$PATCH_FILE" 2>&1)"; then
     if [[ -n "$PATCH_APPLY_OUTPUT" ]]; then
       echo "$PATCH_APPLY_OUTPUT"
     fi
@@ -635,7 +661,7 @@ for index in "${!PATCH_FILES[@]}"; do
     if ! log_patch_failure \
       "应用补丁" \
       "$PATCH_EXIT_CODE" \
-      "git apply --verbose $PATCH_FILE" \
+      "$APPLY_LABEL $PATCH_FILE" \
       "$PATCH_APPLY_OUTPUT"; then
       exit 1
     fi
