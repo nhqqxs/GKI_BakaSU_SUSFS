@@ -103,10 +103,10 @@ on:
         type: string
         default: ""
       build_uid_guard:
-        description: "Package the uid_guard injector module alongside the kernel"
+        description: "Compile and package the uid_guard injector module. Usually needed only once; leave false for subsequent kernel builds"
         required: false
         type: boolean
-        default: true
+        default: false
       disable_werror:
         required: false
         type: boolean
@@ -471,6 +471,32 @@ jobs:
           cd "$KERNEL_ROOT/common"
           bash "$GITHUB_WORKSPACE/scripts/apply_custom_patches.sh" \
             "$GITHUB_WORKSPACE/custom_patches"
+
+      # ==================== uid_guard 模块编译开关 ====================
+      # 0014 补丁在 drivers/misc/Makefile 里写了 obj-m += uid_guard_cfg.o，
+      # 属无条件编译。这个注入器模块通常只编一次、刷入后长期复用，
+      # 后续构建内核没必要每次都顺带编它（白费编译时间还多一个 artifact）。
+      # 因此 build_uid_guard=false 时直接把那行删掉，从编译阶段就跳过，
+      # 而不是编完再丢弃产物。
+      # 注意：只影响模块编译，0014 的内核侧改动（uid 探针屏蔽逻辑）照常生效。
+      - name: 按需关闭 uid_guard 模块编译
+        if: inputs.build_uid_guard != true
+        working-directory: ${{ env.KERNEL_ROOT }}
+        shell: bash
+        run: |
+          MK="./common/drivers/misc/Makefile"
+          if [ ! -f "$MK" ]; then
+            echo "未找到 $MK，跳过"
+            exit 0
+          fi
+          if grep -q 'uid_guard_cfg\.o' "$MK"; then
+            sed -i '/uid_guard_cfg\.o/d' "$MK"
+            echo "build_uid_guard=false：已从 $MK 移除 uid_guard_cfg.o，本次不编译该模块"
+            echo "其余 obj-m 条目："
+            grep -n 'obj-m' "$MK" | head -8 || true
+          else
+            echo "$MK 中没有 uid_guard_cfg.o（0014 补丁可能未应用），无需处理"
+          fi
 
       # ==================== 伪装 /proc/config.gz（自动检测） ====================
       # 若仓库存在 config/stock_defconfig，则自动应用；不存在则跳过
