@@ -646,6 +646,23 @@ for index in "${!PATCH_FILES[@]}"; do
     if [[ -n "$PATCH_APPLY_OUTPUT" ]]; then
       echo "$PATCH_APPLY_OUTPUT"
     fi
+
+    # patch 允许 fuzz：上下文不能逐行对齐时，它会丢掉首尾最多 2 行再匹配。
+    # 这种情况下改动依然会落地，但落点可能偏离补丁作者的本意（典型场景是
+    # 上游在这段附近插入了新代码，行号对上而上下文只部分对得上）。git apply
+    # 不做 fuzz，所以只有走 patch 回退时才可能出现。这里显式告警，避免
+    # 「补丁应用成功」的标题把这件事掩盖掉。
+    if FUZZ_REPORT="$(printf '%s\n' "$PATCH_APPLY_OUTPUT" \
+        | grep -E 'Hunk #[0-9]+ succeeded at [0-9]+ with fuzz' || true)"; then
+      if [[ -n "$FUZZ_REPORT" ]]; then
+        echo "::warning title=自定义补丁依赖模糊匹配::$PATCH_NAME 有 hunk 需要 fuzz 才能匹配，源码上下文与补丁预期存在差异，请核对下面的落点是否合理："
+        while IFS= read -r fuzz_line; do
+          if [[ -n "$fuzz_line" ]]; then
+            echo "  $fuzz_line"
+          fi
+        done <<< "$FUZZ_REPORT"
+      fi
+    fi
   else
     PATCH_EXIT_CODE=$?
 
