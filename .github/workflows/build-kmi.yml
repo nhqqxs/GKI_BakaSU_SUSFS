@@ -92,10 +92,10 @@ on:
         type: string
         default: ""
       build_uid_guard:
-        description: "Package the uid_guard injector module alongside the kernel"
+        description: "Compile and package the uid_guard injector module. Usually needed only once; leave false for subsequent kernel builds"
         required: false
         type: boolean
-        default: true
+        default: false
       disable_werror:
         required: false
         type: boolean
