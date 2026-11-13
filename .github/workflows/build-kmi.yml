@@ -91,6 +91,11 @@ on:
         required: false
         type: string
         default: ""
+      build_uid_guard:
+        description: "Package the uid_guard injector module alongside the kernel"
+        required: false
+        type: boolean
+        default: true
       disable_werror:
         required: false
         type: boolean
@@ -170,4 +175,5 @@ jobs:
       use_nomount: ${{ inputs.use_nomount || false }}
       build_bypass: ${{ inputs.build_bypass || false }}
       custom_patch_selection: ${{ inputs.custom_patch_selection || '' }}
+      build_uid_guard: ${{ inputs.build_uid_guard }}
       disable_werror: ${{ inputs.disable_werror || false }}
