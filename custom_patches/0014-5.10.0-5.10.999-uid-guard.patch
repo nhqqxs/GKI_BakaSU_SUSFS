@@ -89,7 +89,7 @@ new file mode 100644
 +	uid_guard_set_fn fn;
 +
 +	if (register_kprobe(&kp)) {
-+		pr_err("uid_guard_cfg: 内核里找不到 uid_guard_set\n");
++		pr_err("uid_guard_cfg: symbol uid_guard_set not found\n");
 +		return NULL;
 +	}
 +
@@ -130,7 +130,7 @@ new file mode 100644
 +			continue;
 +
 +		if (kstrtouint(token, 0, &val)) {
-+			pr_warn("uid_guard_cfg: 忽略无法解析的项 '%s'\n", token);
++			pr_warn("uid_guard_cfg: ignoring unparsable entry '%s'\n", token);
 +			continue;
 +		}
 +
@@ -138,7 +138,7 @@ new file mode 100644
 +	}
 +
 +	if (!n) {
-+		pr_info("uid_guard_cfg: 名单为空，保持功能关闭\n");
++		pr_info("uid_guard_cfg: list is empty, staying disabled\n");
 +		return 0;
 +	}
 +
@@ -147,7 +147,7 @@ new file mode 100644
 +		return 0;
 +
 +	ret = set_fn(list, n);
-+	pr_info("uid_guard_cfg: 注入 %d 个 base uid，ret=%d\n", n, ret);
++	pr_info("uid_guard_cfg: injected %d base uids, ret=%d\n", n, ret);
 +
 +	return 0;
 +}
