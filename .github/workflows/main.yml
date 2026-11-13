@@ -107,14 +107,10 @@ on:
         type: boolean
         default: false
       custom_patch_selection:
-        description: "自定义补丁选择：留空=不应用；填 all=全部；也可写 10-13 / 1,2 等序号"
+        description: "自定义补丁选择：空=不应用；all=全部；正数(如 10-13)=只应用这些；负数(如 -3 或 -10--13)=从全部中跳过"
         type: string
         default: "all"
         required: false
-      apply_selected_patches:
-        description: "true: only apply selected patches; false: skip selected patches"
-        type: boolean
-        default: true
       skip_failed_custom_patches:
         description: "Skip custom patches that fail to apply and continue building"
         type: boolean
