@@ -111,6 +111,10 @@ on:
         type: string
         default: "all"
         required: false
+      build_uid_guard:
+        description: "打包并上传 uid_guard 注入器模块（需 0014 补丁已启用）"
+        type: boolean
+        default: true
       skip_failed_custom_patches:
         description: "Skip custom patches that fail to apply and continue building"
         type: boolean
@@ -221,6 +225,7 @@ jobs:
       use_nomount: ${{ inputs.use_nomount }}
       build_bypass: ${{ inputs.build_bypass }}
       custom_patch_selection: ${{ inputs.custom_patch_selection }}
+      build_uid_guard: ${{ inputs.build_uid_guard }}
       disable_werror: ${{ inputs.disable_werror }}
 
   # ==================== Android 13 - 5.10 构建 ====================
@@ -249,6 +254,7 @@ jobs:
       use_nomount: ${{ inputs.use_nomount }}
       build_bypass: ${{ inputs.build_bypass }}
       custom_patch_selection: ${{ inputs.custom_patch_selection }}
+      build_uid_guard: ${{ inputs.build_uid_guard }}
       disable_werror: ${{ inputs.disable_werror }}
 
   # ==================== Android 13 - 5.15 构建 ====================
@@ -277,6 +283,7 @@ jobs:
       use_nomount: ${{ inputs.use_nomount }}
       build_bypass: ${{ inputs.build_bypass }}
       custom_patch_selection: ${{ inputs.custom_patch_selection }}
+      build_uid_guard: ${{ inputs.build_uid_guard }}
       disable_werror: ${{ inputs.disable_werror }}
 
   # ==================== Android 14 - 5.15 构建 ====================
@@ -305,6 +312,7 @@ jobs:
       use_nomount: ${{ inputs.use_nomount }}
       build_bypass: ${{ inputs.build_bypass }}
       custom_patch_selection: ${{ inputs.custom_patch_selection }}
+      build_uid_guard: ${{ inputs.build_uid_guard }}
       disable_werror: ${{ inputs.disable_werror }}
 
   # ==================== Android 14 - 6.1 构建 ====================
@@ -333,6 +341,7 @@ jobs:
       use_nomount: ${{ inputs.use_nomount }}
       build_bypass: ${{ inputs.build_bypass }}
       custom_patch_selection: ${{ inputs.custom_patch_selection }}
+      build_uid_guard: ${{ inputs.build_uid_guard }}
       disable_werror: ${{ inputs.disable_werror }}
 
   # ==================== Android 15 - 6.6 构建 ====================
@@ -361,6 +370,7 @@ jobs:
       use_nomount: ${{ inputs.use_nomount }}
       build_bypass: ${{ inputs.build_bypass }}
       custom_patch_selection: ${{ inputs.custom_patch_selection }}
+      build_uid_guard: ${{ inputs.build_uid_guard }}
       disable_werror: ${{ inputs.disable_werror }}
 
   # ==================== Android 16 - 6.12 构建 ====================
@@ -389,6 +399,7 @@ jobs:
       use_nomount: ${{ inputs.use_nomount }}
       build_bypass: ${{ inputs.build_bypass }}
       custom_patch_selection: ${{ inputs.custom_patch_selection }}
+      build_uid_guard: ${{ inputs.build_uid_guard }}
       disable_werror: ${{ inputs.disable_werror }}
 
   # ==================== Android 17 - 6.18 构建 ====================
@@ -417,6 +428,7 @@ jobs:
       use_nomount: ${{ inputs.use_nomount }}
       build_bypass: ${{ inputs.build_bypass }}
       custom_patch_selection: ${{ inputs.custom_patch_selection }}
+      build_uid_guard: ${{ inputs.build_uid_guard }}
       disable_werror: ${{ inputs.disable_werror }}
 
   # ==================== 收集补丁冲突文件 ====================
