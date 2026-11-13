@@ -1871,8 +1871,11 @@ jobs:
           fi
           
           echo "ANYKERNEL3=$ANYKERNEL3" >> $GITHUB_ENV
-          
-#          zip -r "../$ZIP_NAME" ./*
+
+          # 打成一个真正的 zip（之前这行被注释，artifact 里只有散文件）
+          rm -f "../$ZIP_NAME"
+          zip -r "../$ZIP_NAME" ./*
+          ls -l "../$ZIP_NAME"
 
       # ==================== 构建 Boot 镜像 (Android 12) ====================
       # Android 12 需要从 GKI 认证镜像中提取 ramdisk
@@ -1969,7 +1972,7 @@ jobs:
         with:
           name: ${{ env.BUILD_VARIANT }}_kernel-${{ env.CONFIG }}
           path: |
-            ${{ env.ANYKERNEL3 }}/*
+            ${{ github.workspace }}/*-AnyKernel3.zip
             ${{ github.workspace }}/uid_guard_*.zip
             ${{ github.workspace }}/uid_guard_cfg.ko
 
