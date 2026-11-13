@@ -112,9 +112,9 @@ on:
         default: "all"
         required: false
       build_uid_guard:
-        description: "打包并上传 uid_guard 注入器模块（需 0014 补丁已启用）"
+        description: "编译并打包 uid_guard 注入器模块。一般只需开一次；后续构建内核保持关闭即可（不影响 0014 补丁的内核侧逻辑）"
         type: boolean
-        default: true
+        default: false
       skip_failed_custom_patches:
         description: "Skip custom patches that fail to apply and continue building"
         type: boolean
