@@ -415,6 +415,31 @@ log_patch_failure() {
       echo
       echo "源码差异: $relative_path"
       git diff --no-ext-diff --no-color -- "$relative_path"
+
+      # 预检查失败时补充现场信息：补丁首个 hunk 附近的源码实际字节、
+      # 文件大小与哈希。上下文不匹配时，单看「patch does not apply」无法
+      # 区分「源码版本不对」还是「空白字符有差异」，这里把 cat -A 的
+      # 可视化输出一并打出来（^I 表示制表符，$ 表示行尾）。
+      if [[ "$failure_phase" == "预检查" && -f "$relative_path" ]]; then
+        local first_hunk_line
+        first_hunk_line=$(grep -m1 -oE '^@@ -[0-9]+' "$PATCH_FILE" 2>/dev/null \
+          | grep -oE '[0-9]+' | head -n1 || true)
+        if [[ -n "$first_hunk_line" ]]; then
+          local range_from range_to
+          if (( first_hunk_line > 12 )); then
+            range_from=$(( first_hunk_line - 12 ))
+          else
+            range_from=1
+          fi
+          range_to=$(( first_hunk_line + 26 ))
+          echo
+          echo "源码实际内容（$relative_path 第 $range_from-$range_to 行；补丁首个 hunk 起始于第 $first_hunk_line 行）:"
+          sed -n "${range_from},${range_to}p" "$relative_path" | cat -A
+          echo
+          echo "源码文件大小: $(wc -c < "$relative_path" | tr -d ' ') bytes"
+          echo "源码文件 SHA256: $(sha256sum "$relative_path" | awk '{print $1}')"
+        fi
+      fi
     done
   fi
 
