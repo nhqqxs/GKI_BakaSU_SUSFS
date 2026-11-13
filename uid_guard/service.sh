@@ -98,11 +98,20 @@ if lsmod 2>/dev/null | grep -q '^uid_guard_cfg'; then
 fi
 
 if ! insmod "$KO" uids="$LIST" 2>>"$LOG"; then
-	if command -v ksud >/dev/null 2>&1; then
-		ksud insmod "$KO" uids="$LIST" 2>>"$LOG" ||
-			echo "insmod failed (ksud)" >> "$LOG"
+	# ksud 不一定在 PATH 里（KernelSU 放在 /data/adb/ksu/bin 下），
+	# 所以按常见位置逐个找，别只信 command -v。
+	KSUD=""
+	for cand in "$MODDIR/../ksu/bin/ksud" /data/adb/ksu/bin/ksud /data/adb/ksud; do
+		if [ -x "$cand" ]; then
+			KSUD="$cand"
+			break
+		fi
+	done
+	if [ -n "$KSUD" ]; then
+		"$KSUD" insmod "$KO" uids="$LIST" 2>>"$LOG" ||
+			echo "insmod failed (ksud: $KSUD)" >> "$LOG"
 	else
-		echo "insmod failed" >> "$LOG"
+		echo "insmod failed (no ksud found)" >> "$LOG"
 	fi
 fi
 
