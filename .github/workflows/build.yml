@@ -102,6 +102,11 @@ on:
         required: false
         type: string
         default: ""
+      build_uid_guard:
+        description: "Package the uid_guard injector module alongside the kernel"
+        required: false
+        type: boolean
+        default: true
       disable_werror:
         required: false
         type: boolean
@@ -1724,6 +1729,7 @@ jobs:
       # 下载得到的 zip 根目录就是 module.prop/service.sh/...，可以直接刷入。
       # 找不到 .ko（补丁未启用等）只告警，不影响内核产物。
       - name: 准备 uid_guard 模块
+        if: inputs.build_uid_guard
         run: |
           set -uo pipefail
 
