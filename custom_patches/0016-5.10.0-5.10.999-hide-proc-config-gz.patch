@@ -1,0 +1,24 @@
+diff --git a/kernel/configs.c b/kernel/configs.c
+--- a/kernel/configs.c
++++ b/kernel/configs.c
+@@ -54,6 +54,20 @@
+ 
+ static int __init ikconfig_init(void)
+ {
++	/*
++	 * ---- zn ikconfig hide begin ----
++	 *
++	 * /proc/config.gz 的权限是 0444，普通 app 也能完整读到内核编译配置。
++	 * 其中 CONFIG_KSU=y、CONFIG_UNUSED_KSYMS_WHITELIST 里的构建机路径，
++	 * 都是"这是自编译 root 内核"的直接证据。
++	 *
++	 * 这里直接不注册该 proc 入口，/proc/config.gz 变为不存在。只影响
++	 * "读取当前内核配置"这一调试能力，构建期和运行时功能都不依赖它。
++	 */
++	if (1)
++		return 0;
++	/* ---- zn ikconfig hide end ---- */
++
+ 	struct proc_dir_entry *entry;
+ 
+ 	/* create the current config file */
