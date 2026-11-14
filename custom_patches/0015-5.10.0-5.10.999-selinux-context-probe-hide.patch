@@ -1,7 +1,15 @@
 diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 --- a/security/selinux/selinuxfs.c
 +++ b/security/selinux/selinuxfs.c
-@@ -674,6 +674,55 @@
+@@ -24,6 +24,7 @@
+ #include <linux/init.h>
+ #include <linux/string.h>
+ #include <linux/security.h>
++#include <linux/cred.h>
+ #include <linux/major.h>
+ #include <linux/seq_file.h>
+ #include <linux/percpu.h>
+@@ -674,6 +675,63 @@
  	.llseek		= generic_file_llseek,
  };
  
@@ -13,12 +21,16 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 + * 就说明该类型存在于当前策略中。它们不需要 root，也不受 /proc/kallsyms、
 + * /data/adb 这类路径可见性的限制，是策略枚举的一条盲区。
 + *
-+ * 两个节点必须一起处理：上层探测代码在 context 返回 EINVAL 之后会回退到
-+ * access 再试一次，只堵其中一个等于没堵。
++ * 两个节点必须一起处理：上层探测代码在 context 返回 EINVAL 之后会回退
++ * 到 access 再试一次，只堵其中一个等于没堵。
 + *
-+ * 对 root 框架相关的类型直接返回 -EINVAL，行为与"策略里根本没有这个
-+ * 类型"完全一致：调用方拿到的是 EINVAL 而不是 EACCES，不会因为权限不足
-+ * 而暴露异常，多次探测的结果也保持稳定。
++ * 只对普通 app（uid >= 10000）生效。root(0)、shell(2000)、system(1000)
++ * 以及各类系统守护进程的查询保持原样，否则 LSPosed 的 zygisk 注入、
++ * KernelSU 自身的环境探测会因为拿到 EINVAL 而误判成"没有 root 环境"。
++ *
++ * 对被隐藏的类型返回 -EINVAL，行为与"策略里根本没有这个类型"完全一致：
++ * 调用方拿到的是 EINVAL 而不是 EACCES，不会因为权限不足而暴露异常，
++ * 多次探测的结果也保持稳定。
 + *
 + * 只匹配类型名前缀，不碰 system_data_file 之类正常类型，因此上层用来
 + * 判断"接口是否可信"的哨兵探针不受影响。
@@ -36,6 +48,10 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 +		"u:object_r:magisk_file:",
 +	};
 +	size_t i;
++
++	/* 特权进程一律放行，避免影响 LSPosed / ksud 的环境探测 */
++	if (current_uid().val < 10000)
++		return false;
 +
 +	/* 写入方可能带前导空白或换行 */
 +	while (size > 0 && isspace(*buf)) {
@@ -57,7 +73,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  static ssize_t sel_write_context(struct file *file, char *buf, size_t size)
  {
  	struct selinux_fs_info *fsi = file_inode(file)->i_sb->s_fs_info;
-@@ -687,6 +736,11 @@
+@@ -687,6 +745,11 @@
  			      SECCLASS_SECURITY, SECURITY__CHECK_CONTEXT, NULL);
  	if (length)
  		goto out;
@@ -69,7 +85,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  
  	length = security_context_to_sid(state, buf, size, &sid, GFP_KERNEL);
  	if (length)
-@@ -932,6 +986,10 @@
+@@ -932,6 +995,10 @@
  	length = -EINVAL;
  	if (sscanf(buf, "%s %s %hu", scon, tcon, &tclass) != 3)
  		goto out;
