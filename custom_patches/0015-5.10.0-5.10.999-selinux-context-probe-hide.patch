@@ -9,124 +9,12 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  #include <linux/major.h>
  #include <linux/seq_file.h>
  #include <linux/percpu.h>
-@@ -406,6 +407,23 @@
- 	if (rc)
- 		goto err;
- 
-+	/*
-+	 * ---- zn policy read hide begin ----
-+	 *
-+	 * /sys/fs/selinux/policy 是编译后的完整策略，里面包含全部类型名。
-+	 * 读出来在二进制里搜 "ksu_file" 就能确认 root 框架是否注入了策略，
-+	 * 不依赖 context/access 那套查询接口，也绕开了类型名的前缀过滤。
-+	 *
-+	 * 普通 app 本来就被 SELinux 拒绝读取（security:read_policy），这里
-+	 * 再按 uid 兜一层，保证即使某个域被放行（例如 app_zygote）也拿不到
-+	 * 完整策略。特权进程不受影响。
-+	 */
-+	if (current_uid().val >= 10000) {
-+		rc = -EACCES;
-+		goto err;
-+	}
-+	/* ---- zn policy read hide end ---- */
-+
- 	rc = -EBUSY;
- 	if (fsi->policy_opened)
- 		goto err;
-@@ -674,6 +692,63 @@
- 	.llseek		= generic_file_llseek,
- };
- 
-+/*
-+ * ---- selinuxfs probe hide begin ----
-+ *
-+ * /sys/fs/selinux/context 和 /sys/fs/selinux/access 都是 0666 的
-+ * "策略查询"接口，任意 app 都能把 context 字符串写进来：内核解析成功
-+ * 就说明该类型存在于当前策略中。它们不需要 root，也不受 /proc/kallsyms、
-+ * /data/adb 这类路径可见性的限制，是策略枚举的一条盲区。
-+ *
-+ * 两个节点必须一起处理：上层探测代码在 context 返回 EINVAL 之后会回退
-+ * 到 access 再试一次，只堵其中一个等于没堵。
-+ *
-+ * 只对普通 app（uid >= 10000）生效。root(0)、shell(2000)、system(1000)
-+ * 以及各类系统守护进程的查询保持原样，否则 LSPosed 的 zygisk 注入、
-+ * KernelSU 自身的环境探测会因为拿到 EINVAL 而误判成"没有 root 环境"。
-+ *
-+ * 对被隐藏的类型返回 -EINVAL，行为与"策略里根本没有这个类型"完全一致：
-+ * 调用方拿到的是 EINVAL 而不是 EACCES，不会因为权限不足而暴露异常，
-+ * 多次探测的结果也保持稳定。
-+ *
-+ * 只匹配类型名前缀，不碰 system_data_file 之类正常类型，因此上层用来
-+ * 判断"接口是否可信"的哨兵探针不受影响。
-+ */
-+static bool zn_context_is_hidden(const char *buf, size_t size)
-+{
-+	static const char * const hidden[] = {
-+		"u:r:ksu:",
-+		"u:r:ksud:",
-+		"u:r:ksu_exec:",
-+		"u:r:kernelsu:",
-+		"u:object_r:ksu",
-+		"u:object_r:kernelsu",
-+		"u:r:magisk:",
-+		"u:object_r:magisk_file:",
-+	};
-+	size_t i;
-+
-+	/* 特权进程一律放行，避免影响 LSPosed / ksud 的环境探测 */
-+	if (current_uid().val < 10000)
-+		return false;
-+
-+	/* 写入方可能带前导空白或换行 */
-+	while (size > 0 && isspace(*buf)) {
-+		buf++;
-+		size--;
-+	}
-+
-+	for (i = 0; i < ARRAY_SIZE(hidden); i++) {
-+		size_t n = strlen(hidden[i]);
-+
-+		if (size >= n && !strncmp(buf, hidden[i], n))
-+			return true;
-+	}
-+
-+	return false;
-+}
-+/* ---- selinuxfs probe hide end ---- */
-+
- static ssize_t sel_write_context(struct file *file, char *buf, size_t size)
- {
- 	struct selinux_fs_info *fsi = file_inode(file)->i_sb->s_fs_info;
-@@ -687,6 +762,11 @@
- 			      SECCLASS_SECURITY, SECURITY__CHECK_CONTEXT, NULL);
- 	if (length)
- 		goto out;
-+
-+	if (zn_context_is_hidden(buf, size)) {
-+		length = -EINVAL;
-+		goto out;
-+	}
- 
- 	length = security_context_to_sid(state, buf, size, &sid, GFP_KERNEL);
- 	if (length)
-@@ -933,6 +1013,10 @@
- 	if (sscanf(buf, "%s %s %hu", scon, tcon, &tclass) != 3)
- 		goto out;
- 
-+	if (zn_context_is_hidden(scon, strlen(scon)) ||
-+	    zn_context_is_hidden(tcon, strlen(tcon)))
-+		goto out;	/* zn: access probe hidden */
-+
- 	length = security_context_str_to_sid(state, scon, &ssid, GFP_KERNEL);
- 	if (length)
- 		goto out;
-@@ -942,6 +1026,23 @@
- 		goto out;
+@@ -943,6 +944,27 @@
  
  	security_compute_av_user(state, ssid, tsid, tclass, &avd);
-+
+ 
 +	/*
-+	 * ---- zn self-query mask begin ----
++	 * ---- selinux self-query mask begin ----
 +	 *
 +	 * self 查询（scontext 与 tcontext 解析出同一个 sid）会返回该域对
 +	 * 自身的完整 allowed 位图。上层用 app_zygote 对 app_zygote 的
@@ -137,10 +25,15 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 +	 * 的额外授权"，与干净策略的表现一致。非 self 查询（例如
 +	 * app_zygote -> isolated_app 的 dyntransition）保持真实值，不影响
 +	 * 上层用来校验接口可信度的交叉探针。
++	 *
++	 * 普通 app 没有 SECURITY__COMPUTE_AV 权限，在进入本函数时就被
++	 * SELinux 拒绝了，走不到这里；因此实际只作用在 app_zygote 这类
++	 * 少数有查询权限的域上，root / shell / system 按 uid 放行。
 +	 */
 +	if (ssid == tsid && current_uid().val >= 10000)
 +		avd.allowed = 0;
-+	/* ---- zn self-query mask end ---- */
- 
++	/* ---- selinux self-query mask end ---- */
++
  	length = scnprintf(buf, SIMPLE_TRANSACTION_LIMIT,
  			  "%x %x %x %x %u %x",
+ 			  avd.allowed, 0xffffffff,
