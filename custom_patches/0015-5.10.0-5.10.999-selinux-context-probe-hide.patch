@@ -264,16 +264,28 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  	length = security_context_str_to_sid(state, scon, &ssid, GFP_KERNEL);
  	if (length)
  		goto out;
-@@ -942,6 +1068,63 @@
+@@ -942,6 +1068,57 @@
  		goto out;
  
  	security_compute_av_user(state, ssid, tsid, tclass, &avd);
 +
 +	/*
-+	 * 这一批 (scontext, tcontext) 组合是 DirtySepolicy 用来判定
-+	 * "策略被改动"的证据边，原厂策略下它们都应当是 denied。
-+	 * 对非特权进程统一把 allowed 清零，等价于策略保持原厂状态。
-+	 *
++	 * 只要 scon 或 tcon 命中隐藏前缀，整条查询直接按"类型不存在"处理。
++	 * 这与上游 KernelSU 用 backup_sepolicy（未修改的原始策略）计算的效果
++	 * 等价：那边这些类型根本解析不出 SID，返回的也是 EINVAL。
++	 * 好处是不用枚举 (scon, tcon) 组合——探测方随便换哪一对，
++	 * 都看不到跨域授权痕迹。
++	 */
++	if (current_uid().val >= 10000 &&
++	    (zn_ctx_hidden(scon, strlen(scon)) ||
++	     zn_ctx_hidden(tcon, strlen(tcon)))) {
++		length = -EINVAL;
++		goto out;
++	}
++
++	/*
++	 * 剩下的这批 (scon, tcon) 两端都是真实存在的类型，原厂策略下应当是
++	 * denied，把 allowed 清零等于维持原厂状态。
 +	 * 注意不含 app_zygote -> app_zygote / isolated_app：那是探针用来
 +	 * 验证自身具备查询能力的自检，必须保持真实结果。
 +	 */
@@ -282,14 +294,8 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 +			const char *s;
 +			const char *t;
 +		} zn_dirty_pairs[] = {
-+			{ "u:r:untrusted_app", "u:object_r:ksu" },
-+			{ "u:r:untrusted_app", "u:object_r:lsposed_file" },
-+			{ "u:r:untrusted_app", "u:object_r:xposed_file" },
-+			{ "u:r:untrusted_app", "u:object_r:xposed_data" },
-+			{ "u:r:untrusted_app", "u:r:magisk" },
 +			{ "u:r:system_server", "u:r:system_server" },
 +			{ "u:r:system_server", "u:object_r:apk_data_file" },
-+			{ "u:r:system_server", "u:r:droidspacesd" },
 +			{ "u:r:shell", "u:r:su" },
 +			{ "u:r:adbd", "u:r:adbroot" },
 +			{ "u:r:zygote", "u:object_r:adb_data_file" },
@@ -297,14 +303,6 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 +			{ "u:r:kernel", "u:object_r:tmpfs" },
 +			{ "u:object_r:rootfs", "u:object_r:tmpfs" },
 +			{ "u:r:dex2oat", "u:object_r:dex2oat_exec" },
-+			{ "u:r:magisk", "u:r:droidspacesd" },
-+			{ "u:r:su", "u:r:droidspacesd" },
-+			{ "u:r:msd_app", "u:r:msd_daemon" },
-+			{ "u:r:msd_daemon", "u:r:msd_daemon" },
-+			{ "u:r:msd_daemon", "u:object_r:selinuxfs" },
-+			{ "u:r:msd_daemon", "u:object_r:configfs" },
-+			{ "u:r:zygisk", "u:r:zygisk" },
-+			{ "u:r:zygiskd", "u:r:zygiskd" },
 +		};
 +		int zi;
 +
@@ -319,11 +317,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 +		}
 +	}
 +
-+	/*
-+	 * stock 策略的 avd.seqno 恒为 1；KernelSU 重载策略后 AVC 的
-+	 * latest_granting 会被顶高，与 status 页固定的 policyload=1 对不上。
-+	 * 上游 KernelSU 也是直接钉成 1。
-+	 */
++	/* stock 策略的 avd.seqno 恒为 1；上游 KernelSU 也是直接钉成 1 */
 +	avd.seqno = 1;
  
  	length = scnprintf(buf, SIMPLE_TRANSACTION_LIMIT,
