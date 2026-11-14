@@ -1,0 +1,68 @@
+diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
+--- a/security/selinux/selinuxfs.c
++++ b/security/selinux/selinuxfs.c
+@@ -674,6 +674,52 @@
+ 	.llseek		= generic_file_llseek,
+ };
+ 
++/*
++ * ---- selinux context probe hide begin ----
++ *
++ * /sys/fs/selinux/context 的权限是 0666，任意 app 都能把一段 context
++ * 字符串写进来，内核解析成功就说明该类型存在于当前策略中。这条通道
++ * 不需要 root，也不受 /proc/kallsyms、/data/adb 这类路径可见性的限制，
++ * 因此成了策略枚举的一个盲区。
++ *
++ * 对 root 框架相关的类型直接返回 -EINVAL，行为与"策略里根本没有这个
++ * 类型"完全一致：调用方拿到的是 EINVAL 而不是 EACCES，不会因为权限
++ * 不足而暴露异常，多次探测的结果也保持稳定。
++ *
++ * 只匹配类型名前缀，不碰 system_data_file 之类正常类型，因此上层用来
++ * 判断"接口是否可信"的哨兵探针不受影响。
++ */
++static bool zn_context_is_hidden(const char *buf, size_t size)
++{
++	static const char * const hidden[] = {
++		"u:r:ksu:",
++		"u:r:ksud:",
++		"u:r:ksu_exec:",
++		"u:r:kernelsu:",
++		"u:object_r:ksu",
++		"u:object_r:kernelsu",
++		"u:r:magisk:",
++		"u:object_r:magisk_file:",
++	};
++	size_t i;
++
++	/* 写入方可能带前导空白或换行 */
++	while (size > 0 && isspace(*buf)) {
++		buf++;
++		size--;
++	}
++
++	for (i = 0; i < ARRAY_SIZE(hidden); i++) {
++		size_t n = strlen(hidden[i]);
++
++		if (size >= n && !strncmp(buf, hidden[i], n))
++			return true;
++	}
++
++	return false;
++}
++/* ---- selinux context probe hide end ---- */
++
+ static ssize_t sel_write_context(struct file *file, char *buf, size_t size)
+ {
+ 	struct selinux_fs_info *fsi = file_inode(file)->i_sb->s_fs_info;
+@@ -687,6 +733,11 @@
+ 			      SECCLASS_SECURITY, SECURITY__CHECK_CONTEXT, NULL);
+ 	if (length)
+ 		goto out;
++
++	if (zn_context_is_hidden(buf, size)) {
++		length = -EINVAL;
++		goto out;
++	}
+ 
+ 	length = security_context_to_sid(state, buf, size, &sid, GFP_KERNEL);
+ 	if (length)
