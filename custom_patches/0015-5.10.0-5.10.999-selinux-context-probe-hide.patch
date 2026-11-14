@@ -96,7 +96,46 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  #include <linux/major.h>
  #include <linux/seq_file.h>
  #include <linux/percpu.h>
-@@ -674,6 +676,63 @@
+@@ -232,12 +234,38 @@
+ 	return 0;
+ }
+ 
++/*
++ * KernelSU 重载策略时只更新了 AVC，没有同步 status 页，
++ * 于是 policyload 停在 0 而 access 返回的 avd.seqno 已经是 1。
++ * 两个计数器分裂会被当成"策略被重载过"的证据。
++ * 这里以 AVC 的 latest_granting 为唯一来源回填，保持同源。
++ */
++static void zn_sync_status_page(struct file *filp, struct page *status)
++{
++	struct selinux_kernel_status *st = page_address(status);
++	struct selinux_fs_info *zn_fsi = file_inode(filp)->i_sb->s_fs_info;
++
++	if (st->policyload == avc_policy_seqno(zn_fsi->state))
++		return;
++
++	st->sequence++;
++	smp_wmb();
++
++	st->policyload = avc_policy_seqno(zn_fsi->state);
++	st->deny_unknown = !security_get_allow_unknown(zn_fsi->state);
++
++	smp_wmb();
++	st->sequence++;
++}
++
++
+ static ssize_t sel_read_handle_status(struct file *filp, char __user *buf,
+ 				      size_t count, loff_t *ppos)
+ {
+ 	struct page    *status = filp->private_data;
+ 
+ 	BUG_ON(!status);
++	zn_sync_status_page(filp, status);
+ 
+ 	return simple_read_from_buffer(buf, count, ppos,
+ 				       page_address(status),
+@@ -674,6 +702,63 @@
  	.llseek		= generic_file_llseek,
  };
  
@@ -160,7 +199,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  static ssize_t sel_write_context(struct file *file, char *buf, size_t size)
  {
  	struct selinux_fs_info *fsi = file_inode(file)->i_sb->s_fs_info;
-@@ -687,6 +746,11 @@
+@@ -687,6 +772,11 @@
  			      SECCLASS_SECURITY, SECURITY__CHECK_CONTEXT, NULL);
  	if (length)
  		goto out;
@@ -172,7 +211,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  
  	length = security_context_to_sid(state, buf, size, &sid, GFP_KERNEL);
  	if (length)
-@@ -933,6 +997,18 @@
+@@ -933,6 +1023,18 @@
  	if (sscanf(buf, "%s %s %hu", scon, tcon, &tclass) != 3)
  		goto out;
  
@@ -191,7 +230,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  	length = security_context_str_to_sid(state, scon, &ssid, GFP_KERNEL);
  	if (length)
  		goto out;
-@@ -942,6 +1018,56 @@
+@@ -942,6 +1044,56 @@
  		goto out;
  
  	security_compute_av_user(state, ssid, tsid, tclass, &avd);
