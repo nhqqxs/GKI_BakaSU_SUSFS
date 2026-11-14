@@ -9,7 +9,31 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  #include <linux/major.h>
  #include <linux/seq_file.h>
  #include <linux/percpu.h>
-@@ -674,6 +675,63 @@
+@@ -406,6 +407,23 @@
+ 	if (rc)
+ 		goto err;
+ 
++	/*
++	 * ---- zn policy read hide begin ----
++	 *
++	 * /sys/fs/selinux/policy 是编译后的完整策略，里面包含全部类型名。
++	 * 读出来在二进制里搜 "ksu_file" 就能确认 root 框架是否注入了策略，
++	 * 不依赖 context/access 那套查询接口，也绕开了类型名的前缀过滤。
++	 *
++	 * 普通 app 本来就被 SELinux 拒绝读取（security:read_policy），这里
++	 * 再按 uid 兜一层，保证即使某个域被放行（例如 app_zygote）也拿不到
++	 * 完整策略。特权进程不受影响。
++	 */
++	if (current_uid().val >= 10000) {
++		rc = -EACCES;
++		goto err;
++	}
++	/* ---- zn policy read hide end ---- */
++
+ 	rc = -EBUSY;
+ 	if (fsi->policy_opened)
+ 		goto err;
+@@ -674,6 +692,63 @@
  	.llseek		= generic_file_llseek,
  };
  
@@ -73,7 +97,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  static ssize_t sel_write_context(struct file *file, char *buf, size_t size)
  {
  	struct selinux_fs_info *fsi = file_inode(file)->i_sb->s_fs_info;
-@@ -687,6 +745,11 @@
+@@ -687,6 +762,11 @@
  			      SECCLASS_SECURITY, SECURITY__CHECK_CONTEXT, NULL);
  	if (length)
  		goto out;
@@ -85,7 +109,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  
  	length = security_context_to_sid(state, buf, size, &sid, GFP_KERNEL);
  	if (length)
-@@ -932,6 +995,10 @@
+@@ -932,6 +1012,10 @@
  	length = -EINVAL;
  	if (sscanf(buf, "%s %s %hu", scon, tcon, &tclass) != 3)
  		goto out;
