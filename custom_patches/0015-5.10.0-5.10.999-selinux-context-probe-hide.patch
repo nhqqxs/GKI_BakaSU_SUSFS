@@ -10,7 +10,7 @@ diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
  #include <linux/mutex.h>
  #include <linux/posix-timers.h>
  #include <linux/syslog.h>
-@@ -6445,6 +6447,64 @@
+@@ -6445,6 +6447,65 @@
  	return error;
  }
  
@@ -34,6 +34,7 @@ diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
 +		"u:r:ksud:",
 +		"u:r:ksu_exec:",
 +		"u:r:kernelsu:",
++		"u:r:kp:",
 +		"u:object_r:ksu",
 +		"u:object_r:kernelsu",
 +		"u:r:magisk:",
@@ -75,7 +76,7 @@ diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
  static int selinux_setprocattr(const char *name, void *value, size_t size)
  {
  	struct task_security_struct *tsec;
-@@ -6487,6 +6547,9 @@
+@@ -6487,6 +6548,9 @@
  			str[size-1] = 0;
  			size--;
  		}
@@ -178,7 +179,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  }
  
  static ssize_t sel_read_handle_status(struct file *filp, char __user *buf,
-@@ -674,6 +734,64 @@
+@@ -674,6 +734,65 @@
  	.llseek		= generic_file_llseek,
  };
  
@@ -202,6 +203,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 +		"u:r:ksud:",
 +		"u:r:ksu_exec:",
 +		"u:r:kernelsu:",
++		"u:r:kp:",
 +		"u:object_r:ksu",
 +		"u:object_r:kernelsu",
 +		"u:r:magisk:",
@@ -243,7 +245,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  static ssize_t sel_write_context(struct file *file, char *buf, size_t size)
  {
  	struct selinux_fs_info *fsi = file_inode(file)->i_sb->s_fs_info;
-@@ -687,6 +805,11 @@
+@@ -687,6 +806,11 @@
  			      SECCLASS_SECURITY, SECURITY__CHECK_CONTEXT, NULL);
  	if (length)
  		goto out;
@@ -255,7 +257,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  
  	length = security_context_to_sid(state, buf, size, &sid, GFP_KERNEL);
  	if (length)
-@@ -933,6 +1056,18 @@
+@@ -933,6 +1057,18 @@
  	if (sscanf(buf, "%s %s %hu", scon, tcon, &tclass) != 3)
  		goto out;
  
@@ -274,7 +276,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  	length = security_context_str_to_sid(state, scon, &ssid, GFP_KERNEL);
  	if (length)
  		goto out;
-@@ -942,6 +1077,57 @@
+@@ -942,6 +1078,57 @@
  		goto out;
  
  	security_compute_av_user(state, ssid, tsid, tclass, &avd);
