@@ -10,7 +10,7 @@ diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
  #include <linux/mutex.h>
  #include <linux/posix-timers.h>
  #include <linux/syslog.h>
-@@ -6445,6 +6447,63 @@
+@@ -6445,6 +6447,64 @@
  	return error;
  }
  
@@ -44,6 +44,7 @@ diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
 +		"u:r:msd_daemon:",
 +		"u:object_r:xposed_data:",
 +		"u:object_r:xposed_file:",
++		
 +		"u:r:adbroot:",
 +		"u:r:zygisk:",
 +		"u:r:zygiskd:",
@@ -74,7 +75,7 @@ diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
  static int selinux_setprocattr(const char *name, void *value, size_t size)
  {
  	struct task_security_struct *tsec;
-@@ -6487,6 +6546,9 @@
+@@ -6487,6 +6547,9 @@
  			str[size-1] = 0;
  			size--;
  		}
@@ -87,7 +88,7 @@ diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
 diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 --- a/security/selinux/selinuxfs.c
 +++ b/security/selinux/selinuxfs.c
-@@ -24,6 +24,10 @@
+@@ -24,6 +24,11 @@
  #include <linux/init.h>
  #include <linux/string.h>
  #include <linux/security.h>
@@ -95,22 +96,24 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 +#include <linux/ctype.h>
 +#include <linux/gfp.h>
 +#include <linux/mm.h>
++#include <linux/version.h>
  #include <linux/major.h>
  #include <linux/seq_file.h>
  #include <linux/percpu.h>
-@@ -219,17 +223,65 @@
+@@ -219,17 +224,72 @@
  	.llseek		= generic_file_llseek,
  };
  
 +/*
-+ * status 节点暴露 sequence/policyload 两个计数器。KernelSU 重载策略走的是
-+ * avc_ss_reset 直连路径，不会同步 status 页，于是出现
-+ *   sequence=8（被重载次数顶高） vs policyload=1
-+ * 这种分裂，被当成"策略被改动过"的证据。
++ * status 节点暴露的是 5 个 u32：version/sequence/enforcing/policyload/deny_unknown。
++ * KernelSU 重载策略走 avc_ss_reset 直连路径，不会同步这个页，
++ * 于是出现 "sequence 被顶高、policyload 不动" 的分裂，
++ * 被当成"策略被改动过"的证据。
 + *
-+ * 这里参考上游 KernelSU 的处理：准备一个固定的"刚开机"快照，
-+ * 把两个计数器钉在 init 加载策略后的典型值（4 / 1），
-+ * 让 read 与 mmap 都看到同一份稳定内容。
++ * 期望值随内核版本变化（见 torvalds/fc983171e4c8）：
++ *   6.10+ ：首次安全策略加载也会走 policyload 通知，稳定态是 sequence=4, policyload=1
++ *   < 6.10：首次加载不发通知，稳定态是 sequence=0, policyload=0
++ * 这里按下编译内核的版本给出对应组合，跟检测方的判据对齐。
 + */
 +static struct page *zn_fake_status __read_mostly;
 +
@@ -134,9 +137,15 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 +	st = page_address(fake);
 +	memcpy(st, page_address(real), sizeof(*st));
 +
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 +	st->sequence = 4;
 +	st->policyload = 1;
++#else
++	st->sequence = 0;
++	st->policyload = 0;
++#endif
 +	st->enforcing = 1;
++	st->deny_unknown = 1;
 +
 +	zn_fake_status = fake;
 +}
@@ -169,7 +178,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  }
  
  static ssize_t sel_read_handle_status(struct file *filp, char __user *buf,
-@@ -674,6 +726,63 @@
+@@ -674,6 +734,64 @@
  	.llseek		= generic_file_llseek,
  };
  
@@ -203,6 +212,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 +		"u:r:msd_daemon:",
 +		"u:object_r:xposed_data:",
 +		"u:object_r:xposed_file:",
++		
 +		"u:r:adbroot:",
 +		"u:r:zygisk:",
 +		"u:r:zygiskd:",
@@ -233,7 +243,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  static ssize_t sel_write_context(struct file *file, char *buf, size_t size)
  {
  	struct selinux_fs_info *fsi = file_inode(file)->i_sb->s_fs_info;
-@@ -687,6 +796,11 @@
+@@ -687,6 +805,11 @@
  			      SECCLASS_SECURITY, SECURITY__CHECK_CONTEXT, NULL);
  	if (length)
  		goto out;
@@ -245,7 +255,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  
  	length = security_context_to_sid(state, buf, size, &sid, GFP_KERNEL);
  	if (length)
-@@ -933,6 +1047,18 @@
+@@ -933,6 +1056,18 @@
  	if (sscanf(buf, "%s %s %hu", scon, tcon, &tclass) != 3)
  		goto out;
  
@@ -264,7 +274,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  	length = security_context_str_to_sid(state, scon, &ssid, GFP_KERNEL);
  	if (length)
  		goto out;
-@@ -942,6 +1068,57 @@
+@@ -942,6 +1077,57 @@
  		goto out;
  
  	security_compute_av_user(state, ssid, tsid, tclass, &avd);
@@ -317,7 +327,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 +		}
 +	}
 +
-+	/* stock 策略的 avd.seqno 恒为 1；上游 KernelSU 也是直接钉成 1 */
++	/* stock 策略下 avd.seqno 恒为 1，检测方也是按 1 校验 */
 +	avd.seqno = 1;
  
  	length = scnprintf(buf, SIMPLE_TRANSACTION_LIMIT,
