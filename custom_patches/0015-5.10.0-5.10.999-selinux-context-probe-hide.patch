@@ -109,14 +109,38 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  
  	length = security_context_to_sid(state, buf, size, &sid, GFP_KERNEL);
  	if (length)
-@@ -932,6 +1012,10 @@
- 	length = -EINVAL;
+@@ -933,6 +1013,10 @@
  	if (sscanf(buf, "%s %s %hu", scon, tcon, &tclass) != 3)
  		goto out;
-+
+ 
 +	if (zn_context_is_hidden(scon, strlen(scon)) ||
 +	    zn_context_is_hidden(tcon, strlen(tcon)))
 +		goto out;	/* zn: access probe hidden */
- 
++
  	length = security_context_str_to_sid(state, scon, &ssid, GFP_KERNEL);
  	if (length)
+ 		goto out;
+@@ -942,6 +1026,23 @@
+ 		goto out;
+ 
+ 	security_compute_av_user(state, ssid, tsid, tclass, &avd);
++
++	/*
++	 * ---- zn self-query mask begin ----
++	 *
++	 * self 查询（scontext 与 tcontext 解析出同一个 sid）会返回该域对
++	 * 自身的完整 allowed 位图。上层用 app_zygote 对 app_zygote 的
++	 * process 权限位图是否为 0 来判断"策略里有没有额外跨域授权"：
++	 * root 框架注入策略后这个位图不再是 0，于是被判定为异常。
++	 *
++	 * 对非特权进程清零 self 查询的 allowed，等价于"这个域没有对自身
++	 * 的额外授权"，与干净策略的表现一致。非 self 查询（例如
++	 * app_zygote -> isolated_app 的 dyntransition）保持真实值，不影响
++	 * 上层用来校验接口可信度的交叉探针。
++	 */
++	if (ssid == tsid && current_uid().val >= 10000)
++		avd.allowed = 0;
++	/* ---- zn self-query mask end ---- */
+ 
+ 	length = scnprintf(buf, SIMPLE_TRANSACTION_LIMIT,
+ 			  "%x %x %x %x %u %x",
