@@ -1,77 +1,153 @@
-diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
---- a/security/selinux/selinuxfs.c
-+++ b/security/selinux/selinuxfs.c
-@@ -24,6 +24,7 @@
- #include <linux/init.h>
- #include <linux/string.h>
- #include <linux/security.h>
-+#include <linux/cred.h>
- #include <linux/major.h>
- #include <linux/seq_file.h>
- #include <linux/percpu.h>
-@@ -674,6 +675,48 @@
- 	.llseek		= generic_file_llseek,
- };
+diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
+--- a/security/selinux/hooks.c
++++ b/security/selinux/hooks.c
+@@ -6445,6 +6445,54 @@
+ 	return error;
+ }
  
 +/*
-+ * ---- selinux priv-probe mask begin ----
++ * ---- zn hidden context begin ----
 + *
-+ * 上层通过 /sys/fs/selinux/access 做"代查询"：用任意 scontext 去问
-+ * 某个 root 框架域是否被授予了跨域权限，再把结果按位拼成 allowedMask。
-+ * 每一位对应一条规则，例如 untrusted_app -> magisk : binder:call、
-+ * shell -> su : process:transition、adbd -> adbroot : binder:call。
++ * /proc/self/attr/current 的写入路径有两级检查：先 avc_has_perm(SETCURRENT)，
++ * 再 security_context_to_sid()。类型存在但 kernel 对其 check_context 被拒时
++ * 返回 -EACCES，类型不存在才返回 -EINVAL。上层据此区分"存在但无权"和
++ * "根本不存在"，所以隐藏时必须给出 EINVAL，否则反而确认了类型的存在。
 + *
-+ * 只要策略里存在任意一条，mask 就非 0，于是被判定为"策略跨域授权"。
-+ * 这些查询没有一条是 self 查询，scontext 与 tcontext 都是不同的域，
-+ * 因此不能靠 ssid == tsid 来识别，只能按域名对匹配。
-+ *
-+ * 对非特权进程把匹配到的查询结果清零，等价于"策略里没有这些跨域
-+ * 授权"，与干净设备的表现一致。root / shell / system 按 uid 放行。
++ * 这里在解析之前直接对 root 框架类型返回 -EINVAL，与"策略里没有这个
++ * 类型"完全一致。只匹配类型名前缀，不碰普通类型。
 + */
-+static bool zn_is_priv_probe(const char *scon, const char *tcon)
++static bool zn_ctx_hidden(const char *buf, size_t size)
 +{
-+	static const struct {
-+		const char *s;
-+		const char *t;
-+	} pairs[] = {
-+		{ "u:r:untrusted_app", "u:r:magisk" },
-+		{ "u:r:untrusted_app", "u:object_r:lsposed_file" },
-+		{ "u:r:system_server", "u:r:system_server" },
-+		{ "u:r:fsck_untrusted", "u:r:fsck_untrusted" },
-+		{ "u:r:shell", "u:r:su" },
-+		{ "u:r:adbd", "u:r:adbroot" },
-+		{ "u:r:magisk", "u:r:droidspacesd" },
-+		{ "u:r:su", "u:r:droidspacesd" },
++	static const char * const hidden[] = {
++		"u:r:ksu:",
++		"u:r:ksud:",
++		"u:r:ksu_exec:",
++		"u:r:kernelsu:",
++		"u:object_r:ksu",
++		"u:object_r:kernelsu",
++		"u:r:magisk:",
++		"u:object_r:magisk_file:",
++		"u:object_r:lsposed_file:",
++		"u:r:droidspacesd:",
++		"u:r:msd_app:",
++		"u:r:msd_daemon:",
++		"u:object_r:xposed_data:",
++		"u:object_r:xposed_file:",
++		"u:r:adbroot:",
 +	};
 +	size_t i;
 +
-+	for (i = 0; i < ARRAY_SIZE(pairs); i++) {
-+		if (!strncmp(scon, pairs[i].s, strlen(pairs[i].s)) &&
-+		    !strncmp(tcon, pairs[i].t, strlen(pairs[i].t)))
++	while (size > 0 && isspace(*buf)) {
++		buf++;
++		size--;
++	}
++
++	for (i = 0; i < ARRAY_SIZE(hidden); i++) {
++		size_t n = strlen(hidden[i]);
++
++		if (size >= n && !strncmp(buf, hidden[i], n))
 +			return true;
 +	}
 +
 +	return false;
 +}
-+/* ---- selinux priv-probe mask end ---- */
++/* ---- zn hidden context end ---- */
++
+ static int selinux_setprocattr(const char *name, void *value, size_t size)
+ {
+ 	struct task_security_struct *tsec;
+@@ -6487,6 +6535,9 @@
+ 			str[size-1] = 0;
+ 			size--;
+ 		}
++		/* root 框架类型按"不存在"处理，避免 EACCES 反证类型存在 */
++		if (zn_ctx_hidden(value, size))
++			return -EINVAL;
+ 		error = security_context_to_sid(&selinux_state, value, size,
+ 						&sid, GFP_KERNEL);
+ 		if (error == -EINVAL && !strcmp(name, "fscreate")) {
+diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
+--- a/security/selinux/selinuxfs.c
++++ b/security/selinux/selinuxfs.c
+@@ -674,6 +674,49 @@
+ 	.llseek		= generic_file_llseek,
+ };
+ 
++/*
++ * ---- zn hidden context begin ----
++ *
++ * selinuxfs 的 context 节点同样用 EINVAL 表达"类型不存在"。上层在
++ * EACCES 时会认为类型存在但无权限，因此这里必须给出 EINVAL。
++ */
++static bool zn_ctx_hidden(const char *buf, size_t size)
++{
++	static const char * const hidden[] = {
++		"u:r:ksu:",
++		"u:r:ksud:",
++		"u:r:ksu_exec:",
++		"u:r:kernelsu:",
++		"u:object_r:ksu",
++		"u:object_r:kernelsu",
++		"u:r:magisk:",
++		"u:object_r:magisk_file:",
++		"u:object_r:lsposed_file:",
++		"u:r:droidspacesd:",
++		"u:r:msd_app:",
++		"u:r:msd_daemon:",
++		"u:object_r:xposed_data:",
++		"u:object_r:xposed_file:",
++		"u:r:adbroot:",
++	};
++	size_t i;
++
++	while (size > 0 && isspace(*buf)) {
++		buf++;
++		size--;
++	}
++
++	for (i = 0; i < ARRAY_SIZE(hidden); i++) {
++		size_t n = strlen(hidden[i]);
++
++		if (size >= n && !strncmp(buf, hidden[i], n))
++			return true;
++	}
++
++	return false;
++}
++/* ---- zn hidden context end ---- */
 +
  static ssize_t sel_write_context(struct file *file, char *buf, size_t size)
  {
  	struct selinux_fs_info *fsi = file_inode(file)->i_sb->s_fs_info;
-@@ -942,6 +985,16 @@
+@@ -687,6 +730,11 @@
+ 			      SECCLASS_SECURITY, SECURITY__CHECK_CONTEXT, NULL);
+ 	if (length)
+ 		goto out;
++
++	if (zn_ctx_hidden(buf, size)) {
++		length = -EINVAL;
++		goto out;
++	}
+ 
+ 	length = security_context_to_sid(state, buf, size, &sid, GFP_KERNEL);
+ 	if (length)
+@@ -942,6 +990,19 @@
  		goto out;
  
  	security_compute_av_user(state, ssid, tsid, tclass, &avd);
 +
 +	/*
-+	 * 把 root 框架特有跨域授权查询的结果清零，使上层拼出的
-+	 * allowedMask 为 0（等价于干净策略）。root/shell/system 放行。
++	 * untrusted_app -> ksu_file : file read 这类跨域规则是重点证据，
++	 * 对非特权进程把它判为"无权限"，等价于策略中没有这条授权。
 +	 */
-+	if (current_uid().val >= 10000 && zn_is_priv_probe(scon, tcon)) {
++	if (current_uid().val >= 10000 &&
++	    (!strncmp(scon, "u:r:untrusted_app", 17) ||
++	     !strncmp(scon, "u:r:app_zygote", 15)) &&
++	    (!strncmp(tcon, "u:object_r:ksu", 14) ||
++	     !strncmp(tcon, "u:object_r:lsposed_file", 23) ||
++	     !strncmp(tcon, "u:object_r:xposed_file", 22) ||
++	     !strncmp(tcon, "u:object_r:magisk_file", 22)))
 +		avd.allowed = 0;
-+		pr_info_ratelimited("zn: priv-probe masked (%s -> %s)\n",
-+				    scon, tcon);
-+	}
  
  	length = scnprintf(buf, SIMPLE_TRANSACTION_LIMIT,
  			  "%x %x %x %x %u %x",
