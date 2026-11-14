@@ -1,20 +1,21 @@
 diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
 --- a/security/selinux/hooks.c
 +++ b/security/selinux/hooks.c
-@@ -6445,6 +6445,54 @@
+@@ -6445,6 +6445,55 @@
  	return error;
  }
  
 +/*
 + * ---- zn hidden context begin ----
 + *
-+ * /proc/self/attr/current 的写入路径有两级检查：先 avc_has_perm(SETCURRENT)，
-+ * 再 security_context_to_sid()。类型存在但 kernel 对其 check_context 被拒时
-+ * 返回 -EACCES，类型不存在才返回 -EINVAL。上层据此区分"存在但无权"和
-+ * "根本不存在"，所以隐藏时必须给出 EINVAL，否则反而确认了类型的存在。
++ * DirtySepolicy 风格的探测在 /proc/self/attr/current、/sys/fs/selinux/context、
++ * /sys/fs/selinux/access 三个节点上都用 errno 区分语义：
++ *   -EACCES  表示"类型存在但无权操作"
++ *   -EINVAL  表示"类型无法解析/不存在"
++ * 因此隐藏时必须统一给出 -EINVAL，否则 EACCES 反而坐实了类型存在。
 + *
-+ * 这里在解析之前直接对 root 框架类型返回 -EINVAL，与"策略里没有这个
-+ * 类型"完全一致。只匹配类型名前缀，不碰普通类型。
++ * 只匹配类型名前缀，不碰普通类型，能力自检（app_zygote -> app_zygote
++ * setcurrent、app_zygote -> kernel check_context）不受影响。
 + */
 +static bool zn_ctx_hidden(const char *buf, size_t size)
 +{
@@ -56,7 +57,7 @@ diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
  static int selinux_setprocattr(const char *name, void *value, size_t size)
  {
  	struct task_security_struct *tsec;
-@@ -6487,6 +6535,9 @@
+@@ -6487,6 +6536,9 @@
  			str[size-1] = 0;
  			size--;
  		}
@@ -69,15 +70,21 @@ diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
 diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 --- a/security/selinux/selinuxfs.c
 +++ b/security/selinux/selinuxfs.c
-@@ -674,6 +674,49 @@
+@@ -674,6 +674,55 @@
  	.llseek		= generic_file_llseek,
  };
  
 +/*
 + * ---- zn hidden context begin ----
 + *
-+ * selinuxfs 的 context 节点同样用 EINVAL 表达"类型不存在"。上层在
-+ * EACCES 时会认为类型存在但无权限，因此这里必须给出 EINVAL。
++ * DirtySepolicy 风格的探测在 /proc/self/attr/current、/sys/fs/selinux/context、
++ * /sys/fs/selinux/access 三个节点上都用 errno 区分语义：
++ *   -EACCES  表示"类型存在但无权操作"
++ *   -EINVAL  表示"类型无法解析/不存在"
++ * 因此隐藏时必须统一给出 -EINVAL，否则 EACCES 反而坐实了类型存在。
++ *
++ * 只匹配类型名前缀，不碰普通类型，能力自检（app_zygote -> app_zygote
++ * setcurrent、app_zygote -> kernel check_context）不受影响。
 + */
 +static bool zn_ctx_hidden(const char *buf, size_t size)
 +{
@@ -119,7 +126,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  static ssize_t sel_write_context(struct file *file, char *buf, size_t size)
  {
  	struct selinux_fs_info *fsi = file_inode(file)->i_sb->s_fs_info;
-@@ -687,6 +730,11 @@
+@@ -687,6 +736,11 @@
  			      SECCLASS_SECURITY, SECURITY__CHECK_CONTEXT, NULL);
  	if (length)
  		goto out;
@@ -131,7 +138,27 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  
  	length = security_context_to_sid(state, buf, size, &sid, GFP_KERNEL);
  	if (length)
-@@ -942,6 +990,19 @@
+@@ -933,6 +987,19 @@
+ 	if (sscanf(buf, "%s %s %hu", scon, tcon, &tclass) != 3)
+ 		goto out;
+ 
++	/*
++	 * 探测代码在 /sys/fs/selinux/context 返回 EINVAL 后会退一步，
++	 * 用 class=0 再写一次 access 节点（i.a(ctx, ctx, 0)）确认。
++	 * 这个组合只有该回退路径会用到，据此精确识别，隐藏类型一并
++	 * 返回 EINVAL，让它继续退到 attr/current 那一级。
++	 */
++	if (tclass == 0 &&
++	    (zn_ctx_hidden(scon, strlen(scon)) ||
++	     zn_ctx_hidden(tcon, strlen(tcon)))) {
++		length = -EINVAL;
++		goto out;
++	}
++
+ 	length = security_context_str_to_sid(state, scon, &ssid, GFP_KERNEL);
+ 	if (length)
+ 		goto out;
+@@ -942,6 +1009,19 @@
  		goto out;
  
  	security_compute_av_user(state, ssid, tsid, tclass, &avd);
