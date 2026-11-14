@@ -9,47 +9,69 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  #include <linux/major.h>
  #include <linux/seq_file.h>
  #include <linux/percpu.h>
-@@ -943,6 +944,43 @@
+@@ -674,6 +675,48 @@
+ 	.llseek		= generic_file_llseek,
+ };
+ 
++/*
++ * ---- selinux priv-probe mask begin ----
++ *
++ * 上层通过 /sys/fs/selinux/access 做"代查询"：用任意 scontext 去问
++ * 某个 root 框架域是否被授予了跨域权限，再把结果按位拼成 allowedMask。
++ * 每一位对应一条规则，例如 untrusted_app -> magisk : binder:call、
++ * shell -> su : process:transition、adbd -> adbroot : binder:call。
++ *
++ * 只要策略里存在任意一条，mask 就非 0，于是被判定为"策略跨域授权"。
++ * 这些查询没有一条是 self 查询，scontext 与 tcontext 都是不同的域，
++ * 因此不能靠 ssid == tsid 来识别，只能按域名对匹配。
++ *
++ * 对非特权进程把匹配到的查询结果清零，等价于"策略里没有这些跨域
++ * 授权"，与干净设备的表现一致。root / shell / system 按 uid 放行。
++ */
++static bool zn_is_priv_probe(const char *scon, const char *tcon)
++{
++	static const struct {
++		const char *s;
++		const char *t;
++	} pairs[] = {
++		{ "u:r:untrusted_app", "u:r:magisk" },
++		{ "u:r:untrusted_app", "u:object_r:lsposed_file" },
++		{ "u:r:system_server", "u:r:system_server" },
++		{ "u:r:fsck_untrusted", "u:r:fsck_untrusted" },
++		{ "u:r:shell", "u:r:su" },
++		{ "u:r:adbd", "u:r:adbroot" },
++		{ "u:r:magisk", "u:r:droidspacesd" },
++		{ "u:r:su", "u:r:droidspacesd" },
++	};
++	size_t i;
++
++	for (i = 0; i < ARRAY_SIZE(pairs); i++) {
++		if (!strncmp(scon, pairs[i].s, strlen(pairs[i].s)) &&
++		    !strncmp(tcon, pairs[i].t, strlen(pairs[i].t)))
++			return true;
++	}
++
++	return false;
++}
++/* ---- selinux priv-probe mask end ---- */
++
+ static ssize_t sel_write_context(struct file *file, char *buf, size_t size)
+ {
+ 	struct selinux_fs_info *fsi = file_inode(file)->i_sb->s_fs_info;
+@@ -942,6 +985,16 @@
+ 		goto out;
  
  	security_compute_av_user(state, ssid, tsid, tclass, &avd);
- 
++
 +	/*
-+	 * ---- selinux self-query mask begin ----
-+	 *
-+	 * self 查询（scontext 与 tcontext 解析出同一个 sid）会返回该域对
-+	 * 自身的完整 allowed 位图。上层用 app_zygote 对 app_zygote 的
-+	 * process 权限位图是否为 0 来判断"策略里有没有额外跨域授权"：
-+	 * root 框架注入策略后这个位图不再是 0，于是被判定为异常。
-+	 *
-+	 * 对非特权进程清零 self 查询的 allowed，等价于"这个域没有对自身
-+	 * 的额外授权"，与干净策略的表现一致。非 self 查询（例如
-+	 * app_zygote -> isolated_app 的 dyntransition）保持真实值，不影响
-+	 * 上层用来校验接口可信度的交叉探针。
-+	 *
-+	 * 普通 app 没有 SECURITY__COMPUTE_AV 权限，在进入本函数时就被
-+	 * SELinux 拒绝了，走不到这里；因此实际只作用在 app_zygote 这类
-+	 * 少数有查询权限的域上，root / shell / system 按 uid 放行。
-+	 *
-+	 * 诊断日志（rate-limited，不影响功能）：
-+	 *   "zn: av ssid=%u tsid=%u uid=%u same=%d allowed=%x"
-+	 * 可以直接看出 self 判定到底卡在哪个条件上。
++	 * 把 root 框架特有跨域授权查询的结果清零，使上层拼出的
++	 * allowedMask 为 0（等价于干净策略）。root/shell/system 放行。
 +	 */
-+	pr_info_once("zn: selinux self-query mask active\n");
-+
-+	if (ssid == tsid)
-+		pr_info_ratelimited("zn: av ssid=%u tsid=%u uid=%u same=1 allowed=%x\n",
-+				    ssid, tsid, current_uid().val, avd.allowed);
-+	else if (current_uid().val >= 10000)
-+		pr_info_ratelimited("zn: av ssid=%u tsid=%u uid=%u same=0\n",
-+				    ssid, tsid, current_uid().val);
-+
-+	if (ssid == tsid && current_uid().val >= 10000) {
++	if (current_uid().val >= 10000 && zn_is_priv_probe(scon, tcon)) {
 +		avd.allowed = 0;
-+		pr_info_ratelimited("zn: self-query masked (ssid=%u uid=%u)\n",
-+				    ssid, current_uid().val);
++		pr_info_ratelimited("zn: priv-probe masked (%s -> %s)\n",
++				    scon, tcon);
 +	}
-+	/* ---- selinux self-query mask end ---- */
-+
+ 
  	length = scnprintf(buf, SIMPLE_TRANSACTION_LIMIT,
  			  "%x %x %x %x %u %x",
- 			  avd.allowed, 0xffffffff,
