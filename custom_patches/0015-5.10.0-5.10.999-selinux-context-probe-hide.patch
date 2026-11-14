@@ -1,15 +1,16 @@
 diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
 --- a/security/selinux/hooks.c
 +++ b/security/selinux/hooks.c
-@@ -79,6 +79,7 @@
+@@ -79,6 +79,8 @@
  #include <linux/personality.h>
  #include <linux/audit.h>
  #include <linux/string.h>
 +#include <linux/ctype.h>
++#include <linux/cred.h>
  #include <linux/mutex.h>
  #include <linux/posix-timers.h>
  #include <linux/syslog.h>
-@@ -6445,6 +6446,56 @@
+@@ -6445,6 +6447,61 @@
  	return error;
  }
  
@@ -22,8 +23,9 @@ diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
 + *   -EINVAL           表示"类型无法解析/不存在"
 + * 因此隐藏时必须统一给出 -EINVAL，否则 EACCES/EPERM 反而坐实了类型存在。
 + *
-+ * 只匹配类型名前缀，不碰普通类型，能力自检（app_zygote -> app_zygote
-+ * setcurrent、app_zygote -> kernel check_context）不受影响。
++ * 只对普通 app（uid >= 10000）生效。root(0)、shell(2000)、system(1000)
++ * 以及 LSPosed 的 lspd/zygisk 注入流程都要按真实语义切换域，放行它们
++ * 才不会破坏框架加载；而探针 carrier（app_zygote，uid 是 app uid）仍被拦截。
 + */
 +static bool zn_ctx_hidden(const char *buf, size_t size)
 +{
@@ -45,6 +47,10 @@ diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
 +		"u:r:adbroot:",
 +	};
 +	size_t i;
++
++	/* 特权进程一律放行，避免影响 LSPosed / ksud / su 的域切换 */
++	if (current_uid().val < 10000)
++		return false;
 +
 +	while (size > 0 && (*buf == ' ' || *buf == '\t' ||
 +			    *buf == '\n' || *buf == '\r')) {
@@ -66,7 +72,7 @@ diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
  static int selinux_setprocattr(const char *name, void *value, size_t size)
  {
  	struct task_security_struct *tsec;
-@@ -6487,6 +6538,9 @@
+@@ -6487,6 +6544,9 @@
  			str[size-1] = 0;
  			size--;
  		}
@@ -88,7 +94,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  #include <linux/major.h>
  #include <linux/seq_file.h>
  #include <linux/percpu.h>
-@@ -674,6 +676,56 @@
+@@ -674,6 +676,61 @@
  	.llseek		= generic_file_llseek,
  };
  
@@ -101,8 +107,9 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 + *   -EINVAL           表示"类型无法解析/不存在"
 + * 因此隐藏时必须统一给出 -EINVAL，否则 EACCES/EPERM 反而坐实了类型存在。
 + *
-+ * 只匹配类型名前缀，不碰普通类型，能力自检（app_zygote -> app_zygote
-+ * setcurrent、app_zygote -> kernel check_context）不受影响。
++ * 只对普通 app（uid >= 10000）生效。root(0)、shell(2000)、system(1000)
++ * 以及 LSPosed 的 lspd/zygisk 注入流程都要按真实语义切换域，放行它们
++ * 才不会破坏框架加载；而探针 carrier（app_zygote，uid 是 app uid）仍被拦截。
 + */
 +static bool zn_ctx_hidden(const char *buf, size_t size)
 +{
@@ -125,6 +132,10 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 +	};
 +	size_t i;
 +
++	/* 特权进程一律放行，避免影响 LSPosed / ksud / su 的域切换 */
++	if (current_uid().val < 10000)
++		return false;
++
 +	while (size > 0 && (*buf == ' ' || *buf == '\t' ||
 +			    *buf == '\n' || *buf == '\r')) {
 +		buf++;
@@ -145,7 +156,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  static ssize_t sel_write_context(struct file *file, char *buf, size_t size)
  {
  	struct selinux_fs_info *fsi = file_inode(file)->i_sb->s_fs_info;
-@@ -687,6 +739,11 @@
+@@ -687,6 +744,11 @@
  			      SECCLASS_SECURITY, SECURITY__CHECK_CONTEXT, NULL);
  	if (length)
  		goto out;
@@ -157,7 +168,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  
  	length = security_context_to_sid(state, buf, size, &sid, GFP_KERNEL);
  	if (length)
-@@ -933,6 +990,18 @@
+@@ -933,6 +995,18 @@
  	if (sscanf(buf, "%s %s %hu", scon, tcon, &tclass) != 3)
  		goto out;
  
@@ -176,7 +187,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  	length = security_context_str_to_sid(state, scon, &ssid, GFP_KERNEL);
  	if (length)
  		goto out;
-@@ -942,6 +1011,19 @@
+@@ -942,6 +1016,19 @@
  		goto out;
  
  	security_compute_av_user(state, ssid, tsid, tclass, &avd);
