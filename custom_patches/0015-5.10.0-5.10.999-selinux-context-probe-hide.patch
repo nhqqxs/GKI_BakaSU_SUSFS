@@ -9,7 +9,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  #include <linux/major.h>
  #include <linux/seq_file.h>
  #include <linux/percpu.h>
-@@ -943,6 +944,36 @@
+@@ -943,6 +944,43 @@
  
  	security_compute_av_user(state, ssid, tsid, tclass, &avd);
  
@@ -30,11 +30,18 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 +	 * SELinux 拒绝了，走不到这里；因此实际只作用在 app_zygote 这类
 +	 * 少数有查询权限的域上，root / shell / system 按 uid 放行。
 +	 *
-+	 * 两条 pr_info 用于现场确认补丁状态：
-+	 *   "zn: selinux self-query mask active"  出现 = 补丁已编入当前内核
-+	 *   "zn: self-query masked"               出现 = 清零分支真的被走到
++	 * 诊断日志（rate-limited，不影响功能）：
++	 *   "zn: av ssid=%u tsid=%u uid=%u same=%d allowed=%x"
++	 * 可以直接看出 self 判定到底卡在哪个条件上。
 +	 */
 +	pr_info_once("zn: selinux self-query mask active\n");
++
++	if (ssid == tsid)
++		pr_info_ratelimited("zn: av ssid=%u tsid=%u uid=%u same=1 allowed=%x\n",
++				    ssid, tsid, current_uid().val, avd.allowed);
++	else if (current_uid().val >= 10000)
++		pr_info_ratelimited("zn: av ssid=%u tsid=%u uid=%u same=0\n",
++				    ssid, tsid, current_uid().val);
 +
 +	if (ssid == tsid && current_uid().val >= 10000) {
 +		avd.allowed = 0;
