@@ -661,6 +661,28 @@ jobs:
             exit 1
           fi
 
+      # ==================== 补充 fsck_untrusted 策略特判 ====================
+      # BakaSU 的「隐藏 SELinux 修改」用 inline hook 接管 sel_write_access，
+      # custom_patches 里改 sel_write_access 的补丁在开关打开后不会执行，
+      # 因此这里直接改 KernelSU 的 selinux_hide.c。
+      # ROM 策略自己放开的规则（如 HyperOS 的 fsck_untrusted sys_admin）
+      # backup_sepolicy 覆盖不到，需要单独清零。
+      - name: 补充 fsck_untrusted 策略特判
+        if: inputs.clean_build != true && inputs.disable_bakasu != true
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          set -euo pipefail
+          F="KernelSU/kernel/feature/selinux_hide.c"
+          if [ ! -f "$F" ]; then
+            echo "::warning::$F 不存在，跳过 fsck_untrusted 特判"
+            exit 0
+          fi
+          python3 "$GITHUB_WORKSPACE/scripts/patch_selinux_hide.py" "$F"
+          grep -n 'zn_fsck_untrusted_guard' "$F" || {
+            echo "::error::fsck_untrusted 特判未能写入 selinux_hide.c"
+            exit 1
+          }
+
       # ==================== 应用 SUSFS 补丁 ====================
       # SUSFS (Super User SUS FileSystem) 用于隐藏 root 痕迹
       - name: 应用 SUSFS 补丁
