@@ -10,7 +10,7 @@ diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
  #include <linux/mutex.h>
  #include <linux/posix-timers.h>
  #include <linux/syslog.h>
-@@ -6445,6 +6447,61 @@
+@@ -6445,6 +6447,63 @@
  	return error;
  }
  
@@ -45,6 +45,8 @@ diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
 +		"u:object_r:xposed_data:",
 +		"u:object_r:xposed_file:",
 +		"u:r:adbroot:",
++		"u:r:zygisk:",
++		"u:r:zygiskd:",
 +	};
 +	size_t i;
 +
@@ -72,7 +74,7 @@ diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
  static int selinux_setprocattr(const char *name, void *value, size_t size)
  {
  	struct task_security_struct *tsec;
-@@ -6487,6 +6544,9 @@
+@@ -6487,6 +6546,9 @@
  			str[size-1] = 0;
  			size--;
  		}
@@ -94,7 +96,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  #include <linux/major.h>
  #include <linux/seq_file.h>
  #include <linux/percpu.h>
-@@ -674,6 +676,61 @@
+@@ -674,6 +676,63 @@
  	.llseek		= generic_file_llseek,
  };
  
@@ -129,6 +131,8 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 +		"u:object_r:xposed_data:",
 +		"u:object_r:xposed_file:",
 +		"u:r:adbroot:",
++		"u:r:zygisk:",
++		"u:r:zygiskd:",
 +	};
 +	size_t i;
 +
@@ -156,7 +160,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  static ssize_t sel_write_context(struct file *file, char *buf, size_t size)
  {
  	struct selinux_fs_info *fsi = file_inode(file)->i_sb->s_fs_info;
-@@ -687,6 +744,11 @@
+@@ -687,6 +746,11 @@
  			      SECCLASS_SECURITY, SECURITY__CHECK_CONTEXT, NULL);
  	if (length)
  		goto out;
@@ -168,7 +172,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  
  	length = security_context_to_sid(state, buf, size, &sid, GFP_KERNEL);
  	if (length)
-@@ -933,6 +995,18 @@
+@@ -933,6 +997,18 @@
  	if (sscanf(buf, "%s %s %hu", scon, tcon, &tclass) != 3)
  		goto out;
  
@@ -187,23 +191,60 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  	length = security_context_str_to_sid(state, scon, &ssid, GFP_KERNEL);
  	if (length)
  		goto out;
-@@ -942,6 +1016,19 @@
+@@ -942,6 +1018,56 @@
  		goto out;
  
  	security_compute_av_user(state, ssid, tsid, tclass, &avd);
 +
 +	/*
-+	 * untrusted_app -> ksu_file : file read 这类跨域规则是重点证据，
-+	 * 对非特权进程把它判为"无权限"，等价于策略中没有这条授权。
++	 * 这一批 (scontext, tcontext) 组合是 DirtySepolicy 用来判定
++	 * "策略被改动"的证据边，原厂策略下它们都应当是 denied。
++	 * 对非特权进程统一把 allowed 清零，等价于策略保持原厂状态。
++	 *
++	 * 注意不含 app_zygote -> app_zygote / isolated_app：那是探针用来
++	 * 验证自身具备查询能力的自检，必须保持真实结果。
 +	 */
-+	if (current_uid().val >= 10000 &&
-+	    (!strncmp(scon, "u:r:untrusted_app", 17) ||
-+	     !strncmp(scon, "u:r:app_zygote", 15)) &&
-+	    (!strncmp(tcon, "u:object_r:ksu", 14) ||
-+	     !strncmp(tcon, "u:object_r:lsposed_file", 23) ||
-+	     !strncmp(tcon, "u:object_r:xposed_file", 22) ||
-+	     !strncmp(tcon, "u:object_r:magisk_file", 22)))
-+		avd.allowed = 0;
++	if (current_uid().val >= 10000) {
++		static const struct {
++			const char *s;
++			const char *t;
++		} zn_dirty_pairs[] = {
++			{ "u:r:untrusted_app", "u:object_r:ksu" },
++			{ "u:r:untrusted_app", "u:object_r:lsposed_file" },
++			{ "u:r:untrusted_app", "u:object_r:xposed_file" },
++			{ "u:r:untrusted_app", "u:object_r:xposed_data" },
++			{ "u:r:untrusted_app", "u:r:magisk" },
++			{ "u:r:system_server", "u:r:system_server" },
++			{ "u:r:system_server", "u:object_r:apk_data_file" },
++			{ "u:r:system_server", "u:r:droidspacesd" },
++			{ "u:r:shell", "u:r:su" },
++			{ "u:r:adbd", "u:r:adbroot" },
++			{ "u:r:zygote", "u:object_r:adb_data_file" },
++			{ "u:r:kernel", "u:object_r:adb_data_file" },
++			{ "u:r:kernel", "u:object_r:tmpfs" },
++			{ "u:object_r:rootfs", "u:object_r:tmpfs" },
++			{ "u:r:dex2oat", "u:object_r:dex2oat_exec" },
++			{ "u:r:magisk", "u:r:droidspacesd" },
++			{ "u:r:su", "u:r:droidspacesd" },
++			{ "u:r:msd_app", "u:r:msd_daemon" },
++			{ "u:r:msd_daemon", "u:r:msd_daemon" },
++			{ "u:r:msd_daemon", "u:object_r:selinuxfs" },
++			{ "u:r:msd_daemon", "u:object_r:configfs" },
++			{ "u:r:zygisk", "u:r:zygisk" },
++			{ "u:r:zygiskd", "u:r:zygiskd" },
++		};
++		int zi;
++
++		for (zi = 0; zi < ARRAY_SIZE(zn_dirty_pairs); zi++) {
++			if (!strncmp(scon, zn_dirty_pairs[zi].s,
++				     strlen(zn_dirty_pairs[zi].s)) &&
++			    !strncmp(tcon, zn_dirty_pairs[zi].t,
++				     strlen(zn_dirty_pairs[zi].t))) {
++				avd.allowed = 0;
++				break;
++			}
++		}
++	}
  
  	length = scnprintf(buf, SIMPLE_TRANSACTION_LIMIT,
  			  "%x %x %x %x %u %x",
