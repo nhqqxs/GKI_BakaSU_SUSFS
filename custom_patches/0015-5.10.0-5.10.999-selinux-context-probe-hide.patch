@@ -9,7 +9,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  #include <linux/major.h>
  #include <linux/seq_file.h>
  #include <linux/percpu.h>
-@@ -943,6 +944,27 @@
+@@ -943,6 +944,36 @@
  
  	security_compute_av_user(state, ssid, tsid, tclass, &avd);
  
@@ -29,9 +29,18 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 +	 * 普通 app 没有 SECURITY__COMPUTE_AV 权限，在进入本函数时就被
 +	 * SELinux 拒绝了，走不到这里；因此实际只作用在 app_zygote 这类
 +	 * 少数有查询权限的域上，root / shell / system 按 uid 放行。
++	 *
++	 * 两条 pr_info 用于现场确认补丁状态：
++	 *   "zn: selinux self-query mask active"  出现 = 补丁已编入当前内核
++	 *   "zn: self-query masked"               出现 = 清零分支真的被走到
 +	 */
-+	if (ssid == tsid && current_uid().val >= 10000)
++	pr_info_once("zn: selinux self-query mask active\n");
++
++	if (ssid == tsid && current_uid().val >= 10000) {
 +		avd.allowed = 0;
++		pr_info_ratelimited("zn: self-query masked (ssid=%u uid=%u)\n",
++				    ssid, current_uid().val);
++	}
 +	/* ---- selinux self-query mask end ---- */
 +
  	length = scnprintf(buf, SIMPLE_TRANSACTION_LIMIT,
