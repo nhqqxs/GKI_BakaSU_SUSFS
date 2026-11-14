@@ -276,7 +276,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
  	length = security_context_str_to_sid(state, scon, &ssid, GFP_KERNEL);
  	if (length)
  		goto out;
-@@ -942,6 +1078,57 @@
+@@ -942,6 +1078,58 @@
  		goto out;
  
  	security_compute_av_user(state, ssid, tsid, tclass, &avd);
@@ -315,6 +315,7 @@ diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
 +			{ "u:r:kernel", "u:object_r:tmpfs" },
 +			{ "u:object_r:rootfs", "u:object_r:tmpfs" },
 +			{ "u:r:dex2oat", "u:object_r:dex2oat_exec" },
++			{ "u:r:fsck_untrusted", "u:r:fsck_untrusted" },
 +		};
 +		int zi;
 +
