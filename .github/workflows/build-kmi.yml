@@ -105,7 +105,7 @@ jobs:
   # 把 build_target 拆成「KMI 名 + 可选内核版本」：
   #   all                  -> kernel_filter 为空（构建该 KMI 全部内核）
   #   android12-5.10       -> kernel_filter 为空
-  #   android12-5.10.lts   -> kernel_filter = lts（只该 KMI 的 LTS 行）
+  #   android12-5.10.lts   -> kernel_filter = 5.10.lts（只该 KMI 的 LTS 行）
   #   android12-5.10.198   -> kernel_filter = 5.10.198（数据名单里的那一条）
   #   android12-5.10.198-r17 -> kernel_filter = 5.10.198-r17（精确到发布 tag）
   #   android12-5.10.X     -> kernel_filter = 5.10.X
@@ -128,9 +128,9 @@ jobs:
           elif [[ "$BT" =~ ^android[0-9]+-([0-9]+\.[0-9]+)$ ]]; then
             # android12-5.10 -> 该 KMI 的全部内核
             echo "filter=" >> "$GITHUB_OUTPUT"
-          elif [[ "$BT" =~ ^android[0-9]+-[0-9]+\.[0-9]+\.lts$ ]]; then
-            # android12-5.10.lts -> 该 KMI 的 LTS 行
-            echo "filter=lts" >> "$GITHUB_OUTPUT"
+          elif [[ "$BT" =~ ^android[0-9]+-([0-9]+\.[0-9]+)\.lts$ ]]; then
+            # android12-5.10.lts -> filter=5.10.lts（prepare_matrix 要求带 KMI 前缀）
+            echo "filter=${BASH_REMATCH[1]}.lts" >> "$GITHUB_OUTPUT"
           elif [[ "$BT" =~ ^android[0-9]+-([0-9]+\.[0-9]+\.[0-9]+(-[rR][0-9]+)?|[0-9]+\.[0-9]+\.[xX])$ ]]; then
             # android12-5.10.198 / .272 / .198-r17 -> filter=5.10.198(-r17)；.X -> 5.10.X
             echo "filter=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
