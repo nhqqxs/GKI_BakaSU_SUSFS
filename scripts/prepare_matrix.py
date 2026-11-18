@@ -16,6 +16,11 @@ FULL_VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 PATCH_LEVEL_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 REVISION_RE = re.compile(r"^r\d+$")
 
+# kernel_filter 的 "lts" 后缀写法（X.Y.lts）：只取跟随分支的最新 LTS 行，
+# 具体子版本号由构建时从 Makefile 读出，不用 JSON 里的快照号。
+# 必须带 KMI 前缀，单独一个 "lts" 不表示任何范围，直接报错。
+LTS_FILTER = "lts"
+
 
 class DataError(ValueError):
     """Raised when a GKI version data file has an invalid schema."""
@@ -115,32 +120,61 @@ def build_matrix(
     validated = validate_data(data)
     android_version = validated["android_version"]
     kernel_version = validated["kernel_version"]
+
+    lts_only = False
+    wildcard = False
+    selected_sublevel = ""
     if kernel_filter:
-        match = re.fullmatch(r"(\d+\.\d+)\.(\d+|[xX])", kernel_filter)
-        if not match or match.group(1) != kernel_version:
-            raise DataError(f"kernel filter does not match {kernel_version}: {kernel_filter!r}")
-        selected_sublevel = match.group(2)
-        wildcard = selected_sublevel.lower() == "x"
-    else:
-        selected_sublevel = ""
-        wildcard = False
+        if kernel_filter == LTS_FILTER:
+            raise DataError(
+                f"kernel filter 需要带 KMI 前缀，例如 {kernel_version}.lts；"
+                f"单独一个 lts 不表示任何范围"
+            )
+        if kernel_filter.endswith("." + LTS_FILTER):
+            # 只接受带 KMI 前缀的写法（X.Y.lts），前缀必须与数据文件一致
+            prefix = kernel_filter[: -len(LTS_FILTER) - 1]
+            if prefix != kernel_version:
+                raise DataError(
+                    f"kernel filter does not match {kernel_version}: {kernel_filter!r}"
+                )
+            lts_only = True
+        else:
+            match = re.fullmatch(r"(\d+\.\d+)\.(\d+|[xX])", kernel_filter)
+            if not match or match.group(1) != kernel_version:
+                raise DataError(
+                    f"kernel filter does not match {kernel_version}: {kernel_filter!r}"
+                )
+            selected_sublevel = match.group(2)
+            wildcard = selected_sublevel.lower() == "x"
+
     matrix: list[dict[str, str]] = []
     seen_sublevels: set[str] = set()
+    lts_snapshot_sublevels: list[str] = []
 
     for index, entry in enumerate(validated["entries"]):
         sublevel = _sublevel(
             entry["kernel"], kernel_version, f"entries[{index}].kernel"
         )
-        if kernel_filter and not wildcard and sublevel != selected_sublevel:
-            continue
         patch_level = entry["date"]
+        is_lts = patch_level == "lts"
+        if is_lts:
+            lts_snapshot_sublevels.append(sublevel)
+
+        if lts_only:
+            if not is_lts:
+                continue
+        elif kernel_filter and not wildcard:
+            # 带具体版本号时只认月度条目。lts 行的数字只是数据更新时的快照，
+            # 分支仍在前进，用它选出来的是「最新」而不是那个固定版本。
+            if is_lts or sublevel != selected_sublevel:
+                continue
         if (
             deduplicate_sublevels
-            and patch_level != "lts"
+            and not is_lts
             and sublevel in seen_sublevels
         ):
             continue
-        if patch_level != "lts":
+        if not is_lts:
             seen_sublevels.add(sublevel)
 
         matrix.append(
@@ -155,7 +189,8 @@ def build_matrix(
 
     if validated["lts"] is not None:
         lts_sublevel = _sublevel(validated["lts"], kernel_version, "lts")
-        if not kernel_filter or wildcard or lts_sublevel == selected_sublevel:
+        lts_snapshot_sublevels.append(lts_sublevel)
+        if lts_only or not kernel_filter or wildcard:
             matrix.append(
                 {
                     "android_version": android_version,
@@ -167,6 +202,12 @@ def build_matrix(
             )
 
     if kernel_filter and not matrix:
+        if selected_sublevel and selected_sublevel in lts_snapshot_sublevels:
+            raise DataError(
+                f"{kernel_filter} 只命中 LTS 行：那里的版本号只是数据快照，"
+                f"分支会继续前进。要跟最新请用 {kernel_version}.lts，"
+                f"要固定某个版本请改用带月度日期的条目"
+            )
         raise DataError(f"kernel version not found in JSON: {kernel_filter}")
     if kernel_filter and not wildcard:
         return matrix[:1]
@@ -178,7 +219,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("data_file", type=Path)
     parser.add_argument(
-        "--kernel-filter", default="", help="select a full kernel version or major.minor.X"
+        "--kernel-filter",
+        default="",
+        help="select a monthly kernel version (X.Y.Z), major.minor.X, or major.minor.lts",
     )
     parser.add_argument(
         "--deduplicate-sublevels",

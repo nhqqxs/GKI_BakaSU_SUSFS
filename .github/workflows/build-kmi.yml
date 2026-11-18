@@ -23,7 +23,7 @@ on:
         type: boolean
         default: true
       build_target:
-        description: "Build target: all / android12-5.10 / android12-5.10.272 (with version = that kernel only)"
+        description: "Build target: all / android12-5.10 / android12-5.10.lts / android12-5.10.272 (monthly version only)"
         required: false
         type: string
         default: "all"
@@ -105,7 +105,8 @@ jobs:
   # 把 build_target 拆成「KMI 名 + 可选内核版本」：
   #   all                  -> kernel_filter 为空（构建该 KMI 全部内核）
   #   android12-5.10       -> kernel_filter 为空
-  #   android12-5.10.272   -> kernel_filter = 5.10.272
+  #   android12-5.10.lts   -> kernel_filter = lts（只该 KMI 的 LTS 行）
+  #   android12-5.10.272   -> kernel_filter = 5.10.272（必须是带月度日期的条目）
   #   android12-5.10.X     -> kernel_filter = 5.10.X
   # GitHub 表达式没有字符串分割，所以放在 shell 里做。
   resolve-filter:
@@ -126,12 +127,15 @@ jobs:
           elif [[ "$BT" =~ ^android[0-9]+-([0-9]+\.[0-9]+)$ ]]; then
             # android12-5.10 -> 该 KMI 的全部内核
             echo "filter=" >> "$GITHUB_OUTPUT"
+          elif [[ "$BT" =~ ^android[0-9]+-[0-9]+\.[0-9]+\.lts$ ]]; then
+            # android12-5.10.lts -> 该 KMI 的 LTS 行
+            echo "filter=lts" >> "$GITHUB_OUTPUT"
           elif [[ "$BT" =~ ^android[0-9]+-([0-9]+\.[0-9]+\.[0-9]+|[0-9]+\.[0-9]+\.[xX])$ ]]; then
             # android12-5.10.272 -> filter=5.10.272；android12-5.10.X -> filter=5.10.X
             echo "filter=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
           else
             echo "::error::build_target 格式无效: $BT"
-            echo "  允许的取值: all / android12-5.10 / android12-5.10.272 / android12-5.10.X"
+            echo "  允许的取值: all / android12-5.10 / android12-5.10.lts / android12-5.10.272 / android12-5.10.X"
             exit 1
           fi
 

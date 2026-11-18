@@ -555,6 +555,19 @@ jobs:
           echo "ACTUAL_SUBLEVEL=$ACTUAL_SUBLEVEL" >> $GITHUB_ENV
           echo "实际子版本号: $ACTUAL_SUBLEVEL"
 
+          # LTS 分支一直在前进：矩阵里的 sub_level 只是数据更新时的快照号，
+          # 直接拿它命名会得到「名字 5.10.272、内容 5.10.274」的错配。
+          # 这里按实际检出的 SUBLEVEL 重写 CONFIG，后续 zip / artifact 都用实际值。
+          if [[ "${{ inputs.os_patch_level }}" == "lts" ]]; then
+            LTS_CONFIG="${{ inputs.android_version }}-${{ inputs.kernel_version }}.${ACTUAL_SUBLEVEL}-lts"
+            echo "CONFIG=$LTS_CONFIG" >> $GITHUB_ENV
+            echo "LTS 实际子版本: $ACTUAL_SUBLEVEL（数据快照: ${{ inputs.sub_level }}）"
+            if [[ "$ACTUAL_SUBLEVEL" != "${{ inputs.sub_level }}" ]]; then
+              echo "::warning title=LTS 版本漂移::${{ inputs.kernel_version }}.${{ inputs.sub_level }} 只是数据快照，实际构建的是 ${{ inputs.kernel_version }}.$ACTUAL_SUBLEVEL"
+            fi
+            echo "### LTS 实际版本：\`${{ inputs.kernel_version }}.$ACTUAL_SUBLEVEL\`（数据快照 \`${{ inputs.kernel_version }}.${{ inputs.sub_level }}\`）" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       # ==================== 修复上游 vm_flags_clear 未声明 ====================
       # Google 向部分 GKI 分支（如 deprecated/android12-5.10-2024-11）回移 16KB 页迁移特性时，
       # mm/mmap.c 调用了 vm_flags_clear()，但 include 头文件未同步声明该 helper，

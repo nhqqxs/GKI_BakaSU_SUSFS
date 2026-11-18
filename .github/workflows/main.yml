@@ -130,9 +130,9 @@ on:
 
       # ==================== 构建版本选择 ====================
       build_target:
-        description: "构建目标：all / android12-5.10 / android12-5.10.272（带完整版本号则只构建该内核；末段可用 X 通配）"
+        description: "构建目标：all / android12-5.10 / android12-5.10.lts（该 KMI 最新）/ android12-5.10.272（必须是带月度日期的条目）；末段 X 为通配"
         type: string
-        default: "android12-5.10.272"
+        default: "android12-5.10.lts"
         required: true
 
       # ==================== Bot-Push 选项 ====================
@@ -187,16 +187,23 @@ jobs:
             echo "build_target = $BT（该 KMI 的全部内核）"
             exit 0
           fi
+          if [[ "$BT" =~ ^android[0-9]+-[0-9]+\.[0-9]+\.lts$ ]]; then
+            echo "build_target = $BT（该 KMI 的 LTS 行，跟随分支最新版本）"
+            exit 0
+          fi
           if [[ "$BT" =~ ^android[0-9]+-[0-9]+\.[0-9]+\.([0-9]+|[xX])$ ]]; then
             echo "build_target = $BT（限定内核版本）"
             exit 0
           fi
           echo "::error::build_target 格式无效: $BT"
           echo "可用写法："
-          echo "  all                  构建全部 8 个 KMI"
-          echo "  android12-5.10       该 KMI 的全部内核"
-          echo "  android12-5.10.272   该 KMI 的指定内核"
-          echo "  android12-5.10.X     该 KMI 该系列的全部内核（X 通配）"
+          echo "  all                    构建全部 8 个 KMI 的全部版本"
+          echo "  android12-5.10         该 KMI 的全部内核"
+          echo "  android12-5.10.lts     该 KMI 的 LTS 行（跟随分支最新版本，只编 1 个）"
+          echo "  android12-5.10.269     该 KMI 的指定月度条目（固定版本，只编 1 个）"
+          echo "  android12-5.10.X       该 KMI 该系列的全部内核（X 通配）"
+          echo "注意：带具体版本号时只匹配带月度日期的条目；LTS 行的版本号只是数据"
+          echo "      快照（分支会继续前进），拿它当固定版本会构建出更新的内核。"
           exit 1
 
   # ==================== Android 12 - 5.10 构建 ====================
