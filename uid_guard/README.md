@@ -1,25 +1,29 @@
-# 已迁移
+# uid_guard 模块
 
-> 本目录是早期版本，已迁移到独立仓库 **[nhqqxs/uid_guard](https://github.com/nhqqxs/uid_guard)**。
-> 请以那边的 `patches/`、`module/`、`src/` 为准，这里的内容不再更新。
+内核侧补丁是 `custom_patches/0014-5.10.0-5.10.999-uid-guard.patch`，它把
+`drivers/misc/uid_guard_cfg.c` 放进内核树（`obj-m`），构建内核时一并产出
+`uid_guard_cfg.ko`。
 
-## 当前形态（摘要）
+本目录就是「可刷入模块」的内容，`build.yml` 打包 artifact 时直接从这里取，
+不再依赖外部仓库：
 
-- **内核补丁**：本仓库 `custom_patches/0014-5.10.0-5.10.999-uid-guard.patch`
-  （当前只放开 android12-5.10）。
-- **注入器**：补丁已把 `drivers/misc/uid_guard_cfg.c` 放进内核树（`obj-m`），
-  `.ko` 随内核构建产出，不需要单独准备内核树。
-- **KernelSU / Magisk 模块**：在 [nhqqxs/uid_guard](https://github.com/nhqqxs/uid_guard) 的
-  `module/` 目录。
+| 文件 | 作用 |
+|---|---|
+| `module.prop` | 模块信息（v1.1.0） |
+| `customize.sh` | 安装脚本（权限、提示） |
+| `service.sh` | 开机读取名单并 insmod |
+| `webroot/` | KernelSU WebUI：勾选要隐藏的应用，改动实时生效 |
+| `src/` | `uid_guard_cfg.ko` 源码（排错 / 独立编译用） |
+| `build_module_zip.sh` | 本地打 zip：`sh build_module_zip.sh [ko 路径]` |
 
-## 快速开始
+名单存在 KernelSU 的 `ksud module config --internal uid_guard` 的 `uids` 键里，
+不再用 `pkgs.conf`：模块目录被 SELinux 标成 `system_file`，WebUI 跑在
+`u:r:ksu:s0` 写不进去，所以只能存 KernelSU 自己的配置接口。
 
-```sh
-# 1. 打补丁（或直接用本仓库的 custom_patches 机制）
-git apply custom_patches/0014-5.10.0-5.10.999-uid-guard.patch
+## 用法
 
-# 2. 构建内核，取出注入器
-find <内核构建目录> -name uid_guard_cfg.ko
+1. 构建内核时勾 `build_uid_guard`，从 artifact 里取 `*_uid_guard` 直接刷入；
+2. 打开模块界面勾选要被隐藏的应用；
+3. 重启，或 `su -c sh /data/adb/modules/uid_guard/service.sh` 立即生效。
 
-# 3. 用 nhqqxs/uid_guard 的 build_module_zip.sh 打包模块并刷入
-```
+名单为空时功能保持关闭（fail-open），不会退化成全量隐藏。

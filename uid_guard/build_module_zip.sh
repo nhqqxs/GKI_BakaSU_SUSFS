@@ -1,5 +1,5 @@
 #!/bin/sh
-# 把 module.prop / customize.sh / service.sh / pkgs.conf 和编译好的 .ko
+# 把 module.prop / customize.sh / service.sh / webroot 和编译好的 .ko
 # 打成可以直接刷入 KernelSU / Magisk 的模块 zip。
 #
 # 用法：
@@ -22,6 +22,6 @@ mkdir -p ko
 cp -f "$KO" ko/uid_guard_cfg.ko
 
 rm -f "$OUT"
-zip -r "$OUT" module.prop customize.sh service.sh pkgs.conf ko/uid_guard_cfg.ko
+zip -r "$OUT" module.prop customize.sh service.sh webroot ko/uid_guard_cfg.ko
 
 echo "打包完成: $(pwd)/$OUT"

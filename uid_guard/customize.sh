@@ -13,4 +13,5 @@ if [ ! -f "$MODPATH/ko/uid_guard_cfg.ko" ]; then
 	ui_print "! 模块可以安装，但不会生效：请用打了 0014 补丁的内核树编译后放入 ko/"
 fi
 
-ui_print "- 编辑 pkgs.conf 后重启（或执行 service.sh）即可生效"
+ui_print "- 名单保存在 ksud 配置里，由模块界面维护"
+ui_print "- 装好后打开本模块，勾选要隐藏的应用即可（改动实时生效）"

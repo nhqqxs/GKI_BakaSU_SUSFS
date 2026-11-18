@@ -1,15 +1,21 @@
 #!/system/bin/sh
 # uid_guard 名单注入器
 #
-# 每次开机把 pkgs.conf 里的包名解析成 base uid，交给内核补丁的
-# uid_guard_set()。名单为空 / 解析失败时保持功能关闭（fail-open），
-# 不会退化成“全量隐藏”。
+# 名单唯一来源：ksud module config --internal uid_guard（键 uids，逗号分隔）。
+# 由 WebUI 维护，也可以手动改：
+#   su -c '/data/adb/ksu/bin/ksud module config --internal uid_guard set uids "a.b,c.d"'
+#
+# 为什么不用配置文件：/data/adb/modules/<id>/ 的内容被 SELinux 标成
+# system_file，WebUI 的命令跑在 u:r:ksu:s0 域，写不进模块目录，所以名单
+# 只能落在 KernelSU 自己的配置接口里。
+#
+# 名单为空 / 解析失败时保持功能关闭（fail-open），不会退化成“全量隐藏”。
 
 MODDIR=${0%/*}
-CONF="$MODDIR/pkgs.conf"
 LOG="$MODDIR/last_boot.log"
 KO="$MODDIR/ko/uid_guard_cfg.ko"
 PLIST=/data/system/packages.list
+MODID=uid_guard
 
 [ -f "$KO" ] || KO="$MODDIR/uid_guard_cfg.ko"
 
@@ -20,8 +26,39 @@ if [ ! -f "$KO" ]; then
 	exit 0
 fi
 
-if [ ! -f "$CONF" ]; then
-	echo "MISS conf: $CONF" >> "$LOG"
+# ---------------------------------------------------------------- ksud
+KSUD=""
+for cand in /data/adb/ksu/bin/ksud /data/adb/ksud; do
+	if [ -x "$cand" ]; then
+		KSUD="$cand"
+		break
+	fi
+done
+if [ -z "$KSUD" ] && command -v ksud >/dev/null 2>&1; then
+	KSUD=$(command -v ksud)
+fi
+
+if [ -z "$KSUD" ]; then
+	echo "MISS ksud, 无法读取名单" >> "$LOG"
+	exit 0
+fi
+
+# ---------------------------------------------------------------- 名单
+cfg=$("$KSUD" module config --internal "$MODID" get uids 2>/dev/null)
+cfg_rc=$?
+cfg=$(printf '%s' "$cfg" | tr -d '\r')
+
+if [ "$cfg_rc" -ne 0 ]; then
+	# 键不存在 = 还没在页面里勾选过任何应用
+	echo "no uids configured, uid_guard stays off" >> "$LOG"
+	exit 0
+fi
+
+TOKENS=$(printf '%s' "$cfg" | tr ',' '\n')
+echo "source=ksud-config" >> "$LOG"
+
+if [ -z "$(printf '%s' "$TOKENS" | tr -d '[:space:]')" ]; then
+	echo "empty uid list, uid_guard stays off" >> "$LOG"
 	exit 0
 fi
 
@@ -63,7 +100,6 @@ uid_of() {
 
 LIST=""
 while IFS= read -r line || [ -n "$line" ]; do
-	line="${line%%#*}"
 	line=$(echo "$line" | tr -d ' \t\r')
 	[ -z "$line" ] && continue
 
@@ -83,7 +119,9 @@ while IFS= read -r line || [ -n "$line" ]; do
 	*",$u,"*) ;;
 	*) LIST="${LIST:+$LIST,}$u" ;;
 	esac
-done < "$CONF"
+done <<TOKENS_EOF
+$TOKENS
+TOKENS_EOF
 
 if [ -z "$LIST" ]; then
 	echo "empty uid list, uid_guard stays off" >> "$LOG"
@@ -97,32 +135,22 @@ if lsmod 2>/dev/null | grep -q '^uid_guard_cfg'; then
 	rmmod uid_guard_cfg 2>/dev/null
 fi
 
-# 加载顺序：先 ksud，再 insmod。
+# 加载顺序：先 ksud 再 insmod。
 #
-# 实测（5.10 GKI，CONFIG_TRIM_UNUSED_KSYMS=y）toybox 的 insmod 必定失败：
+# 5.10 GKI 开了 CONFIG_TRIM_UNUSED_KSYMS，uid_guard_set 只被本模块引用，
+# 而裁剪表在模块编译前就生成，导致它的 __ksymtab 条目被裁掉。toybox 的
+# insmod 因此在加载时报：
 #   insmod: can't insert '...': unknown symbol in module, or unknown parameter
 #   uid_guard_cfg: Unknown symbol uid_guard_set (err -2)
-# 但紧接着用 ksud insmod 同一条命令就能加载成功，模块进入 Live 且名单注入
-# 生效。既然裸 insmod 只会在日志里留一条误导性的错误，就把它放到后面兜底。
-KSUD=""
-for cand in "$MODDIR/../ksu/bin/ksud" /data/adb/ksu/bin/ksud /data/adb/ksud; do
-	if [ -x "$cand" ]; then
-		KSUD="$cand"
-		break
-	fi
-done
-
+# 而 ksud insmod 同一条命令能成功，所以把 ksud 放在前面，避免每次开机都
+# 先留一条误导性的错误。
 loaded=0
 
-if [ -n "$KSUD" ]; then
-	if "$KSUD" insmod "$KO" uids="$LIST" 2>>"$LOG"; then
-		loaded=1
-		echo "loaded via ksud: $KSUD" >> "$LOG"
-	else
-		echo "ksud insmod failed: $KSUD" >> "$LOG"
-	fi
+if "$KSUD" insmod "$KO" uids="$LIST" 2>>"$LOG"; then
+	loaded=1
+	echo "loaded via ksud: $KSUD" >> "$LOG"
 else
-	echo "ksud not found, falling back to insmod" >> "$LOG"
+	echo "ksud insmod failed: $KSUD" >> "$LOG"
 fi
 
 if [ "$loaded" -eq 0 ]; then
@@ -134,9 +162,12 @@ if [ "$loaded" -eq 0 ]; then
 	fi
 fi
 
-if [ "$loaded" -eq 1 ]; then
-	echo "uid_guard active, $LIST" >> "$LOG"
-fi
+# 把模块自己的日志落到文件里，便于确认名单是否真的进了内核。
+# 内核在 syslog 模式下会把非 ASCII 字节转义成 \xNN，所以模块里的 pr_*
+# 字符串一律用英文；出现中文说明是旧版 .ko。
+# 成功时应看到 "injected N base uids, ret=0"，名单为空时是
+# "list is empty, staying disabled"。
+dmesg 2>/dev/null | grep "uid_guard_cfg" | tail -2 >> "$LOG"
 
 # 注入完成后可以选择卸载配置模块，进一步减少常驻痕迹。
 # 注意：卸载后名单仍在（已经写进内核），下次改名单需要重新加载本模块。
