@@ -137,7 +137,7 @@ jobs:
           echo "========================================"
           echo "Android 版本  : ${{ inputs.android_version }}"
           echo "内核版本      : ${{ inputs.kernel_version }}"
-          echo "子版本号      : ${{ inputs.sub_level }}"
+          echo "子版本号      : ${{ inputs.os_patch_level == 'lts' && 'lts（构建时从源码读取）' || inputs.sub_level }}"
           echo "补丁级别      : ${{ inputs.os_patch_level }}"
           echo "构建模式      : $BUILD_VARIANT"
           if [ "${{ inputs.clean_build }}" = "true" ]; then
@@ -215,8 +215,12 @@ jobs:
             REVISION_SUFFIX="-${{ inputs.revision }}"
           fi
           CONFIG="${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}"
-          # os_patch_level=version 表示按「版本发布 tag」构建，没有月份后缀
-          if [ "${{ inputs.os_patch_level }}" != "version" ]; then
+          if [ "${{ inputs.os_patch_level }}" = "lts" ]; then
+            # LTS 行的矩阵标签就是 lts（数字只是数据快照），不用再拼一遍；
+            # 实际子版本在检出源码后重写 CONFIG
+            CONFIG="${{ inputs.android_version }}-${{ inputs.kernel_version }}-lts"
+          elif [ "${{ inputs.os_patch_level }}" != "version" ]; then
+            # os_patch_level=version 表示按「版本发布 tag」构建，没有月份后缀
             CONFIG="${CONFIG}-${{ inputs.os_patch_level }}"
           fi
           CONFIG="${CONFIG}${REVISION_SUFFIX}"
@@ -593,17 +597,17 @@ jobs:
           echo "ACTUAL_SUBLEVEL=$ACTUAL_SUBLEVEL" >> $GITHUB_ENV
           echo "实际子版本号: $ACTUAL_SUBLEVEL"
 
-          # LTS 分支一直在前进：矩阵里的 sub_level 只是数据更新时的快照号，
-          # 直接拿它命名会得到「名字 5.10.272、内容 5.10.274」的错配。
+          # LTS 分支一直在前进：矩阵标签只有 lts，实际版本要检出源码才知道。
           # 这里按实际检出的 SUBLEVEL 重写 CONFIG，后续 zip / artifact 都用实际值。
           if [[ "${{ inputs.os_patch_level }}" == "lts" ]]; then
+            if [[ ! "$ACTUAL_SUBLEVEL" =~ ^[0-9]+$ ]]; then
+              echo "::error::未能从 $KERNEL_ROOT/common/Makefile 读到实际 SUBLEVEL（当前: $ACTUAL_SUBLEVEL）" >&2
+              exit 1
+            fi
             LTS_CONFIG="${{ inputs.android_version }}-${{ inputs.kernel_version }}.${ACTUAL_SUBLEVEL}-lts"
             echo "CONFIG=$LTS_CONFIG" >> $GITHUB_ENV
-            echo "LTS 实际子版本: $ACTUAL_SUBLEVEL（数据快照: ${{ inputs.sub_level }}）"
-            if [[ "$ACTUAL_SUBLEVEL" != "${{ inputs.sub_level }}" ]]; then
-              echo "::warning title=LTS 版本漂移::${{ inputs.kernel_version }}.${{ inputs.sub_level }} 只是数据快照，实际构建的是 ${{ inputs.kernel_version }}.$ACTUAL_SUBLEVEL"
-            fi
-            echo "### LTS 实际版本：\`${{ inputs.kernel_version }}.$ACTUAL_SUBLEVEL\`（数据快照 \`${{ inputs.kernel_version }}.${{ inputs.sub_level }}\`）" >> "$GITHUB_STEP_SUMMARY"
+            echo "LTS 实际子版本: $ACTUAL_SUBLEVEL（矩阵标签: lts）"
+            echo "### LTS 实际版本：\`${{ inputs.kernel_version }}.$ACTUAL_SUBLEVEL\`（矩阵标签 \`lts\`）" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       # ==================== 修复上游 vm_flags_clear 未声明 ====================

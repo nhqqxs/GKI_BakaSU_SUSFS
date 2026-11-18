@@ -37,7 +37,7 @@ class ReleaseTagTests(unittest.TestCase):
         # LTS 的数字随数据更新而变，所以从数据文件里取，不写死。
         self.assertEqual([item["sub_level"] for item in matrix[:-1]], ["20", "21", "32"])
         self.assertEqual(matrix[-1]["os_patch_level"], "lts")
-        self.assertEqual(matrix[-1]["sub_level"], data["lts"].rsplit(".", 1)[1])
+        self.assertEqual(matrix[-1]["sub_level"], "lts")
 
     def test_latest_revision_is_numeric_and_scoped_to_series(self) -> None:
         output = "\n".join(

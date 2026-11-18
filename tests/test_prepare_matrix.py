@@ -51,7 +51,7 @@ class LtsFilterTests(unittest.TestCase):
         rows = matrix(data_510(), "5.10.lts")
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["os_patch_level"], "lts")
-        self.assertEqual(rows[0]["sub_level"], "272")
+        self.assertEqual(rows[0]["sub_level"], "lts")
 
     def test_bare_lts_is_rejected(self) -> None:
         # 单独一个 lts 不表示任何范围：必须带 KMI 前缀，否则会误以为只编一个 KMI
@@ -62,7 +62,7 @@ class LtsFilterTests(unittest.TestCase):
     def test_xy_lts_works_for_root_style_data(self) -> None:
         root = matrix(data_66(), "6.6.lts")
         self.assertEqual(len(root), 1)
-        self.assertEqual(root[0]["sub_level"], "144")
+        self.assertEqual(root[0]["sub_level"], "lts")
         self.assertEqual(root[0]["os_patch_level"], "lts")
         self.assertEqual(root[0]["revision"], "r2")
 
@@ -145,7 +145,7 @@ class PinnedVersionTests(unittest.TestCase):
 class MatrixShapeTests(unittest.TestCase):
     def test_wildcard_keeps_every_entry_plus_lts(self) -> None:
         rows = matrix(data_510(), "5.10.X")
-        self.assertEqual([row["sub_level"] for row in rows], ["198", "269", "272"])
+        self.assertEqual([row["sub_level"] for row in rows], ["198", "269", "lts"])
         self.assertEqual(rows[-1]["os_patch_level"], "lts")
 
     def test_no_filter_keeps_every_entry_plus_lts(self) -> None:
@@ -156,7 +156,7 @@ class MatrixShapeTests(unittest.TestCase):
         data = data_510()
         data["entries"].append({"kernel": "5.10.198", "date": "2025-02", "revision": "r19"})
         rows = matrix(data, deduplicate=True)
-        self.assertEqual([row["sub_level"] for row in rows], ["198", "269", "272"])
+        self.assertEqual([row["sub_level"] for row in rows], ["198", "269", "lts"])
         rows_all = matrix(data, deduplicate=False)
         self.assertEqual(len(rows_all), 4)
 

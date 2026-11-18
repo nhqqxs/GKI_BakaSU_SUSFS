@@ -204,7 +204,9 @@ def build_matrix(
             {
                 "android_version": android_version,
                 "kernel_version": kernel_version,
-                "sub_level": sublevel,
+                # LTS 行的数字只是数据快照：矩阵里统一标成 lts，真实子版本由
+                # build.yml 检出后从 Makefile 读取，并按实际值命名产物。
+                "sub_level": "lts" if is_lts else sublevel,
                 "os_patch_level": patch_level,
                 "revision": revision,
             }
@@ -228,7 +230,7 @@ def build_matrix(
                 {
                     "android_version": android_version,
                     "kernel_version": kernel_version,
-                    "sub_level": lts_sublevel,
+                    "sub_level": "lts",
                     "os_patch_level": "lts",
                     "revision": validated["lts_revision"] or "",
                 }
