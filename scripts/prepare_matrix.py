@@ -117,6 +117,18 @@ def validate_data(
 def build_matrix(
     data: Any, deduplicate_sublevels: bool, kernel_filter: str = ""
 ) -> list[dict[str, str]]:
+    """按 kernel_filter 生成构建矩阵。
+
+    filter 语法（都带 KMI 前缀，前缀是数据文件自己的 kernel_version）：
+      ""            整份名单（批量构建用）
+      X.Y.X         整份名单（显式通配，同上）
+      X.Y.Z         名单里该 kernel 的那一条（同一 kernel 有多条时必须带 revision）
+      X.Y.Z-rN      名单里该 kernel + revision 的那一条，精确锁定到发布 tag
+      X.Y.lts       LTS 行；实际子版本由构建时读 Makefile 决定
+
+    X.Y.Z 不在名单里时不做报错，而是返回一行 os_patch_level=version：名单只是批量
+    名单，单版本构建按上游的版本发布 tag（android<KMI>-<kernel>.<sub>[_rN]）走。
+    """
     validated = validate_data(data)
     android_version = validated["android_version"]
     kernel_version = validated["kernel_version"]
@@ -124,6 +136,7 @@ def build_matrix(
     lts_only = False
     wildcard = False
     selected_sublevel = ""
+    selected_revision = ""
     if kernel_filter:
         if kernel_filter == LTS_FILTER:
             raise DataError(
@@ -139,26 +152,32 @@ def build_matrix(
                 )
             lts_only = True
         else:
-            match = re.fullmatch(r"(\d+\.\d+)\.(\d+|[xX])", kernel_filter)
+            match = re.fullmatch(
+                r"(\d+\.\d+)\.(\d+|[xX])(?:-([rR]\d+))?", kernel_filter
+            )
             if not match or match.group(1) != kernel_version:
                 raise DataError(
                     f"kernel filter does not match {kernel_version}: {kernel_filter!r}"
                 )
             selected_sublevel = match.group(2)
             wildcard = selected_sublevel.lower() == "x"
+            selected_revision = (match.group(3) or "").lower()
+            if wildcard and selected_revision:
+                raise DataError(f"通配写法不能带 revision: {kernel_filter!r}")
 
     matrix: list[dict[str, str]] = []
     seen_sublevels: set[str] = set()
-    lts_snapshot_sublevels: list[str] = []
+    revision_choices: dict[str, set[str]] = {}
 
     for index, entry in enumerate(validated["entries"]):
         sublevel = _sublevel(
             entry["kernel"], kernel_version, f"entries[{index}].kernel"
         )
         patch_level = entry["date"]
+        revision = str(entry.get("revision", ""))
         is_lts = patch_level == "lts"
-        if is_lts:
-            lts_snapshot_sublevels.append(sublevel)
+        if not is_lts:
+            revision_choices.setdefault(sublevel, set()).add(revision)
 
         if lts_only:
             if not is_lts:
@@ -168,9 +187,13 @@ def build_matrix(
             # 分支仍在前进，用它选出来的是「最新」而不是那个固定版本。
             if is_lts or sublevel != selected_sublevel:
                 continue
+            if selected_revision and revision.lower() != selected_revision:
+                continue
+        # 精确到单个版本时不做去重，否则同一 kernel 的多个 revision 会被吞掉
         if (
             deduplicate_sublevels
             and not is_lts
+            and not (kernel_filter and not wildcard)
             and sublevel in seen_sublevels
         ):
             continue
@@ -183,13 +206,23 @@ def build_matrix(
                 "kernel_version": kernel_version,
                 "sub_level": sublevel,
                 "os_patch_level": patch_level,
-                "revision": entry.get("revision", ""),
+                "revision": revision,
             }
+        )
+
+    if selected_sublevel and not selected_revision and not wildcard and len(matrix) > 1:
+        choices = "、".join(
+            f"{kernel_version}.{row['sub_level']}-{row['revision'] or '无 revision'}"
+            f"（{row['os_patch_level']}）"
+            for row in matrix
+        )
+        raise DataError(
+            f"{kernel_filter} 在名单里对应多个条目：{choices}；"
+            f"请带上 revision，例如 {kernel_version}.{selected_sublevel}-r10"
         )
 
     if validated["lts"] is not None:
         lts_sublevel = _sublevel(validated["lts"], kernel_version, "lts")
-        lts_snapshot_sublevels.append(lts_sublevel)
         if lts_only or not kernel_filter or wildcard:
             matrix.append(
                 {
@@ -202,13 +235,28 @@ def build_matrix(
             )
 
     if kernel_filter and not matrix:
-        if selected_sublevel and selected_sublevel in lts_snapshot_sublevels:
-            raise DataError(
-                f"{kernel_filter} 只命中 LTS 行：那里的版本号只是数据快照，"
-                f"分支会继续前进。要跟最新请用 {kernel_version}.lts，"
-                f"要固定某个版本请改用带月度日期的条目"
+        if selected_revision and selected_sublevel in revision_choices:
+            # 名单里有这个 kernel，只是没有这个 revision：列出可用值
+            choices = "、".join(
+                f"{kernel_version}.{selected_sublevel}-{revision or '无 revision'}"
+                for revision in sorted(revision_choices[selected_sublevel])
             )
-        raise DataError(f"kernel version not found in JSON: {kernel_filter}")
+            raise DataError(
+                f"名单里没有 {kernel_version}.{selected_sublevel}-{selected_revision}；"
+                f"该版本现有：{choices}"
+            )
+        # 名单里没有这个版本：回一行「按版本 tag 构建」，交给 build.yml 去上游找
+        # android<KMI>-<kernel>.<sub>[_rN] 发布 tag。名单只是批量名单，单版本构建
+        # 不需要它——例如 android12-5.10.272 直接对应 android12-5.10.272_r00。
+        return [
+            {
+                "android_version": android_version,
+                "kernel_version": kernel_version,
+                "sub_level": selected_sublevel,
+                "os_patch_level": "version",
+                "revision": selected_revision,
+            }
+        ]
     if kernel_filter and not wildcard:
         return matrix[:1]
 
@@ -221,7 +269,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--kernel-filter",
         default="",
-        help="select a monthly kernel version (X.Y.Z), major.minor.X, or major.minor.lts",
+        help=(
+            "select X.Y.Z (optionally -rN), major.minor.X for the whole roster, "
+            "or major.minor.lts for the dynamic LTS target"
+        ),
     )
     parser.add_argument(
         "--deduplicate-sublevels",

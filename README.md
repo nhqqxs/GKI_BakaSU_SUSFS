@@ -209,7 +209,7 @@ GitHub 的 **Artifacts 下载下来是一个 ZIP**；只解压这一层，里面
 
 | 参数 | 默认值 | 怎么填 |
 |---|---|---|
-| `build_target` | `android12-5.10.lts` | `all` / `android12-5.10` / `android12-5.10.lts` / `android12-5.10.269` / `android12-5.10.X`。`all` 不要用于一台设备；`X` 是整段通配。 |
+| `build_target` | `android12-5.10.lts` | `all` / `android12-5.10` / `android12-5.10.198` / `android12-5.10.198-r17` / `android12-5.10.lts` / `android12-5.10.X`。`all` 不要用于一台设备；`X` 是整段通配。 |
 | `build_kernel_version` | `false` | 勾选后按完整内核版本筛选，只编一个版本；此时 `build_target` 失效。 |
 | `kernel_version_filter` | 空 | 填完整版本，如 `6.6.92`；或 `6.6.X` 编该系列（`X` 大小写都行）。只填纯版本号，不要带 `v`、`-android15` 或后缀。不能留空。 |
 | `kernel_android_version` | `auto` | 6.x 用 `auto`；5.10 必须选 `android12` / `android13`；5.15 必须选 `android13` / `android14`。 |
@@ -218,19 +218,28 @@ GitHub 的 **Artifacts 下载下来是一个 ZIP**；只解压这一层，里面
 
 **`build_target` 的取值语义：**
 
-| 写法 | 选中的行 | 说明 |
+| 写法 | 用途 | 展开成几个 job |
 |---|---|---|
-| `all` | 全部 KMI 的全部条目 | 一百多个 job |
-| `android12-5.10` | 该 KMI 全部条目（含 LTS） | 该 KMI 全矩阵 |
-| `android12-5.10.lts` | 该 KMI 的 LTS 行 | 跟 `android12-5.10-lts` 分支头 |
-| `android12-5.10.269` | 该 KMI 里 `date=2026-10` 的那一行 | 固定版本，名字与内容一致 |
-| `android12-5.10.X` | 该 KMI 全部条目 | 同「该 KMI 全矩阵」 |
+| `all` | 批量：全部 KMI 的全部条目 | 一百多个 |
+| `android12-5.10` | 批量：该 KMI 全部条目（含 LTS） | 该 KMI 全矩阵 |
+| `android12-5.10.X` | 同上（显式通配） | 该 KMI 全矩阵 |
+| `android12-5.10.198` | 单个：名单里该 kernel 的那一条 | 1 |
+| `android12-5.10.198-r17` | 单个：kernel + revision，精确到发布 tag | 1 |
+| `android12-5.10.272` | 单个：名单里没有该版本 → 用上游版本 tag `android12-5.10.272_r00` | 1 |
+| `android12-5.10.lts` | 单个：该 KMI 的 LTS 行，跟分支最新 | 1 |
 
-> **LTS 行里的版本号只是数据快照。** `data/*/*.json` 里 LTS 行的数字（例如 `5.10.272`）
-> 是最近一次刷新数据时的分支头；分支还在前进，实际构建的是检出时的 `SUBLEVEL`。
-> 因此 `build_target: android12-5.10.272` 现在会直接报错并提示改用 `.lts`——
-> 想要「最新」就写 `.lts`，想要「固定某个版本」就选带月度日期的条目。
-> LTS 构建的产物名（zip / artifact）按实际检出版本命名，不会出现名字 272、内容 274 的错配。
+> **名单里没有的版本也能直接编。** `android12-5.10.272` 不在名单里，脚本会回一行
+> `os_patch_level=version`，`build.yml` 用该 KMI 的 lts manifest + 上游版本发布 tag
+> 构建，完全不依赖 JSON：不带 `-rN` 时自动取该版本最新的 `_rNN`（通常是
+> `android12-5.10.272_r00`），带 `-r00` 就精确锁到那个 tag。名单里有的老版本仍然
+> 走月度 tag（如 `5.10.43` → `android12-5.10-2021-09_r10`），不需要版本 tag；既不在
+> 名单里、上游又还没打 tag 的版本（如刚出的分支头）会明确报错，此时用 `.lts`。名单里有的版本优先按名单里的月度发布 tag 走
+> （`android12-5.10-2024-01_r17`）——两条路都落在不可变的 tag 上。同一个 kernel 在
+> 名单里有多条（不同 revision）时必须带 `-rN`，否则会报错并列出可选值。
+>
+> **LTS 行里的版本号只是数据快照。** 名单 LTS 行的数字（例如 `5.10.272`）只是最近
+> 一次刷新数据时的分支头；`.lts` 构建跟的是分支头（现在 5.10.274），产物名按实际
+> 检出版本命名，不会出现名字 272、内容 274 的错配。
 
 ### 通用参数（各工作流都有）
 

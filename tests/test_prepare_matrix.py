@@ -78,21 +78,60 @@ class PinnedVersionTests(unittest.TestCase):
         self.assertEqual(rows[0]["sub_level"], "269")
         self.assertEqual(rows[0]["os_patch_level"], "2026-10")
 
-    def test_lts_snapshot_number_is_rejected_with_hint(self) -> None:
+    def test_version_missing_from_roster_falls_back_to_version_tag(self) -> None:
+        # 5.10.272 只以 LTS 行的快照号出现；名单里没有月度条目时不再报错，
+        # 而是回一行 os_patch_level=version，让 build.yml 去上游找版本 tag。
+        rows = matrix(data_510(), "5.10.272")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["sub_level"], "272")
+        self.assertEqual(rows[0]["os_patch_level"], "version")
+        self.assertEqual(rows[0]["revision"], "")
+
+    def test_version_tag_mode_keeps_explicit_revision(self) -> None:
+        rows = matrix(data_510(), "5.10.272-r00")
+        self.assertEqual(rows[0]["os_patch_level"], "version")
+        self.assertEqual(rows[0]["revision"], "r00")
+
+    def test_unknown_version_also_falls_back(self) -> None:
+        rows = matrix(data_510(), "5.10.999")
+        self.assertEqual(rows[0]["os_patch_level"], "version")
+        self.assertEqual(rows[0]["sub_level"], "999")
+
+    def test_root_lts_style_missing_version_falls_back(self) -> None:
+        rows = matrix(data_66(), "6.6.144")
+        self.assertEqual(rows[0]["os_patch_level"], "version")
+
+    def test_version_without_revision_uses_roster_entry(self) -> None:
+        rows = matrix(data_510(), "5.10.198")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["revision"], "r17")
+        self.assertEqual(rows[0]["os_patch_level"], "2025-01")
+
+    def test_version_with_revision_is_selected(self) -> None:
+        rows = matrix(data_510(), "5.10.198-r17")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["sub_level"], "198")
+        self.assertEqual(rows[0]["revision"], "r17")
+        self.assertEqual(rows[0]["os_patch_level"], "2025-01")
+        # 大小写不敏感，R17 也认
+        self.assertEqual(matrix(data_510(), "5.10.198-R17")[0]["revision"], "r17")
+
+    def test_unknown_revision_lists_available_choices(self) -> None:
         with self.assertRaises(prepare_matrix.DataError) as ctx:
-            matrix(data_510(), "5.10.272")
+            matrix(data_510(), "5.10.198-r99")
         message = str(ctx.exception)
-        self.assertIn("只命中 LTS 行", message)
-        self.assertIn("5.10.lts", message)
+        self.assertIn("5.10.198-r17", message)
 
-    def test_root_lts_number_is_rejected_too(self) -> None:
-        with self.assertRaises(prepare_matrix.DataError):
-            matrix(data_66(), "6.6.144")
-
-    def test_unknown_version_still_reports_not_found(self) -> None:
+    def test_ambiguous_version_requires_revision(self) -> None:
+        data = data_510()
+        data["entries"].insert(1, {"kernel": "5.10.101", "date": "2022-04", "revision": "r20"})
+        data["entries"].insert(1, {"kernel": "5.10.101", "date": "2022-05", "revision": "r12"})
         with self.assertRaises(prepare_matrix.DataError) as ctx:
-            matrix(data_510(), "5.10.999")
-        self.assertIn("not found", str(ctx.exception))
+            matrix(data, "5.10.101")
+        message = str(ctx.exception)
+        self.assertIn("多个条目", message)
+        self.assertIn("5.10.101-r20", message)
+        self.assertIn("5.10.101-r12", message)
 
     def test_monthly_row_wins_when_lts_row_has_same_sublevel(self) -> None:
         data = data_510()

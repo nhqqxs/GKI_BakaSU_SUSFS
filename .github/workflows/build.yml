@@ -214,7 +214,12 @@ jobs:
           if [ -n "${{ inputs.revision }}" ]; then
             REVISION_SUFFIX="-${{ inputs.revision }}"
           fi
-          CONFIG="${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}${REVISION_SUFFIX}"
+          CONFIG="${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}"
+          # os_patch_level=version 表示按「版本发布 tag」构建，没有月份后缀
+          if [ "${{ inputs.os_patch_level }}" != "version" ]; then
+            CONFIG="${CONFIG}-${{ inputs.os_patch_level }}"
+          fi
+          CONFIG="${CONFIG}${REVISION_SUFFIX}"
           KERNEL_ROOT="$GITHUB_WORKSPACE/$KERNEL_CONFIG"
           mkdir -p "$KERNEL_ROOT"
 
@@ -413,7 +418,17 @@ jobs:
           # 克隆 GCC 工具链 (用于 5.x 内核)
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-gnu-6.4.1.git gcc
 
-          FORMATTED_BRANCH="${{ inputs.android_version }}-${{ inputs.kernel_version }}-${{ inputs.os_patch_level }}"
+          # os_patch_level=version：名单里没有这个版本，按上游「版本发布 tag」构建
+          # （android<KMI>-<kernel>.<sub>[_rN]），manifest 用同一 KMI 的 lts 分支。
+          # 这样单版本构建完全不依赖 data/*/*.json。
+          VERSION_TAG_MODE=false
+          if [ "${{ inputs.os_patch_level }}" = "version" ]; then
+            VERSION_TAG_MODE=true
+            FORMATTED_BRANCH="${{ inputs.android_version }}-${{ inputs.kernel_version }}-lts"
+            echo "版本直构建：manifest 用 common-${FORMATTED_BRANCH}，kernel/common 锁到 ${{ inputs.kernel_version }}.${{ inputs.sub_level }} 的上游发布 tag"
+          else
+            FORMATTED_BRANCH="${{ inputs.android_version }}-${{ inputs.kernel_version }}-${{ inputs.os_patch_level }}"
+          fi
           echo "初始化 repo，分支: common-${FORMATTED_BRANCH}"
 
           retry 4 15 "$REPO" init --depth=1 -u https://android.googlesource.com/kernel/manifest -b "common-${FORMATTED_BRANCH}" --repo-rev=v2.16
@@ -422,7 +437,30 @@ jobs:
           REMOTE_BRANCH=$(retry 4 15 git ls-remote --heads https://android.googlesource.com/kernel/common "refs/heads/${FORMATTED_BRANCH}")
           DEFAULT_MANIFEST_PATH=.repo/manifests/default.xml
 
-          if [ -n "${{ inputs.revision }}" ] && [ "${{ inputs.os_patch_level }}" != "lts" ]; then
+          if [ "$VERSION_TAG_MODE" = true ]; then
+            TAG_PREFIX="${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}"
+            if [ -n "${{ inputs.revision }}" ]; then
+              EXPECT_TAG="${TAG_PREFIX}_${{ inputs.revision }}"
+              TAG_REFS=$(retry 4 15 git ls-remote --tags --refs https://android.googlesource.com/kernel/common "refs/tags/${EXPECT_TAG}")
+            else
+              EXPECT_TAG="${TAG_PREFIX}[_rN]"
+              TAG_REFS=$(retry 4 15 git ls-remote --tags --refs https://android.googlesource.com/kernel/common "refs/tags/${TAG_PREFIX}" "refs/tags/${TAG_PREFIX}_r*")
+            fi
+            if [ -z "${TAG_REFS:-}" ]; then
+              echo "::error::上游没有 ${{ inputs.kernel_version }}.${{ inputs.sub_level }} 的发布 tag（${EXPECT_TAG}）" >&2
+              echo "  可能原因：这个版本太新、上游还没打 tag；或者版本号写错了。" >&2
+              echo "  名单里有的老版本走月度 tag（如 5.10.43 -> android12-5.10-2021-09_r10），不受影响；" >&2
+              echo "  如果目标就是当前分支头，用 ${{ inputs.kernel_version }}.lts（构建时按实际版本命名）。" >&2
+              exit 1
+            fi
+            RELEASE_TAG=$(printf '%s\n' "$TAG_REFS" | awk 'NF{print $2}' | sed 's|^refs/tags/||' | sort -V | tail -n1)
+            echo "使用版本 tag: $RELEASE_TAG"
+            sed -i "s|revision=\"${FORMATTED_BRANCH}\"|revision=\"refs/tags/${RELEASE_TAG}\"|" "$DEFAULT_MANIFEST_PATH"
+            if ! grep -qF "revision=\"refs/tags/${RELEASE_TAG}\"" "$DEFAULT_MANIFEST_PATH"; then
+              echo "::error::未能在 manifest 中设置 kernel/common 的版本 tag" >&2
+              exit 1
+            fi
+          elif [ -n "${{ inputs.revision }}" ] && [ "${{ inputs.os_patch_level }}" != "lts" ]; then
             RELEASE_TAG="${FORMATTED_BRANCH}_${{ inputs.revision }}"
             TAG_REF=$(retry 4 15 git ls-remote --tags --refs https://android.googlesource.com/kernel/common "refs/tags/${RELEASE_TAG}")
             if [ -z "$TAG_REF" ]; then

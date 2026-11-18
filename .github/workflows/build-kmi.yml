@@ -106,7 +106,8 @@ jobs:
   #   all                  -> kernel_filter 为空（构建该 KMI 全部内核）
   #   android12-5.10       -> kernel_filter 为空
   #   android12-5.10.lts   -> kernel_filter = lts（只该 KMI 的 LTS 行）
-  #   android12-5.10.272   -> kernel_filter = 5.10.272（必须是带月度日期的条目）
+  #   android12-5.10.198   -> kernel_filter = 5.10.198（数据名单里的那一条）
+  #   android12-5.10.198-r17 -> kernel_filter = 5.10.198-r17（精确到发布 tag）
   #   android12-5.10.X     -> kernel_filter = 5.10.X
   # GitHub 表达式没有字符串分割，所以放在 shell 里做。
   resolve-filter:
@@ -130,12 +131,12 @@ jobs:
           elif [[ "$BT" =~ ^android[0-9]+-[0-9]+\.[0-9]+\.lts$ ]]; then
             # android12-5.10.lts -> 该 KMI 的 LTS 行
             echo "filter=lts" >> "$GITHUB_OUTPUT"
-          elif [[ "$BT" =~ ^android[0-9]+-([0-9]+\.[0-9]+\.[0-9]+|[0-9]+\.[0-9]+\.[xX])$ ]]; then
-            # android12-5.10.272 -> filter=5.10.272；android12-5.10.X -> filter=5.10.X
+          elif [[ "$BT" =~ ^android[0-9]+-([0-9]+\.[0-9]+\.[0-9]+(-[rR][0-9]+)?|[0-9]+\.[0-9]+\.[xX])$ ]]; then
+            # android12-5.10.198 / .272 / .198-r17 -> filter=5.10.198(-r17)；.X -> 5.10.X
             echo "filter=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
           else
             echo "::error::build_target 格式无效: $BT"
-            echo "  允许的取值: all / android12-5.10 / android12-5.10.lts / android12-5.10.272 / android12-5.10.X"
+            echo "  允许的取值: all / android12-5.10 / android12-5.10.lts / android12-5.10.198 / android12-5.10.198-r17 / android12-5.10.X"
             exit 1
           fi
 
@@ -149,7 +150,7 @@ jobs:
 
   build-kernels:
     needs: prepare-matrix
-    name: "${{ matrix.kernel_version }}.${{ matrix.sub_level }}-${{ matrix.android_version }}-${{ matrix.os_patch_level }}"
+    name: "${{ matrix.kernel_version }}.${{ matrix.sub_level }}-${{ matrix.android_version }}-${{ matrix.os_patch_level == 'version' && 'ver' || matrix.os_patch_level }}"
     strategy:
       fail-fast: false
       matrix:

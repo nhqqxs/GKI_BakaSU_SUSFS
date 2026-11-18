@@ -130,7 +130,7 @@ on:
 
       # ==================== 构建版本选择 ====================
       build_target:
-        description: "构建目标：all / android12-5.10 / android12-5.10.lts（该 KMI 最新）/ android12-5.10.272（必须是带月度日期的条目）；末段 X 为通配"
+        description: "构建目标：all / android12-5.10 / android12-5.10.198[-r17] / android12-5.10.lts / android12-5.10.X"
         type: string
         default: "android12-5.10.lts"
         required: true
@@ -191,19 +191,25 @@ jobs:
             echo "build_target = $BT（该 KMI 的 LTS 行，跟随分支最新版本）"
             exit 0
           fi
+          if [[ "$BT" =~ ^android[0-9]+-[0-9]+\.[0-9]+\.[0-9]+-[rR][0-9]+$ ]]; then
+            echo "build_target = $BT（指定版本 + revision，精确到发布 tag）"
+            exit 0
+          fi
           if [[ "$BT" =~ ^android[0-9]+-[0-9]+\.[0-9]+\.([0-9]+|[xX])$ ]]; then
             echo "build_target = $BT（限定内核版本）"
             exit 0
           fi
           echo "::error::build_target 格式无效: $BT"
           echo "可用写法："
-          echo "  all                    构建全部 8 个 KMI 的全部版本"
-          echo "  android12-5.10         该 KMI 的全部内核"
-          echo "  android12-5.10.lts     该 KMI 的 LTS 行（跟随分支最新版本，只编 1 个）"
-          echo "  android12-5.10.269     该 KMI 的指定月度条目（固定版本，只编 1 个）"
-          echo "  android12-5.10.X       该 KMI 该系列的全部内核（X 通配）"
-          echo "注意：带具体版本号时只匹配带月度日期的条目；LTS 行的版本号只是数据"
-          echo "      快照（分支会继续前进），拿它当固定版本会构建出更新的内核。"
+          echo "  all                      全部 8 个 KMI 的全部版本（批量）"
+          echo "  android12-5.10           该 KMI 的全部内核（批量）"
+          echo "  android12-5.10.198       该 KMI 指定版本（同一版本有多条时需带 revision）"
+          echo "  android12-5.10.198-r17   该 KMI 指定版本 + revision，精确到发布 tag（只编 1 个）"
+          echo "  android12-5.10.lts       该 KMI 的 LTS 行，跟随分支最新（只编 1 个）"
+          echo "  android12-5.10.X         该 KMI 该系列的全部内核（批量，X 通配）"
+          echo "注意：data/*/*.json 只是批量名单；单个版本可以不看名单，直接写 version[-revision]。"
+          echo "      名单里没有的版本（如 5.10.272）会按上游版本发布 tag（android12-5.10.272_r00）构建；"
+          echo "      要跟最新分支头用 .lts，产物名按实际检出版本命名。"
           exit 1
 
   # ==================== Android 12 - 5.10 构建 ====================
