@@ -3,14 +3,39 @@
   "kernel_version": "5.10",
   "entries": [
     {
+      "date": "2021-08",
+      "kernel": "5.10.43",
+      "revision": "r7"
+    },
+    {
       "date": "2021-09",
       "kernel": "5.10.43",
       "revision": "r10"
     },
     {
+      "date": "2021-10",
+      "kernel": "5.10.43",
+      "revision": "r7"
+    },
+    {
       "date": "2021-11",
       "kernel": "5.10.66",
       "revision": "r20"
+    },
+    {
+      "date": "2021-12",
+      "kernel": "5.10.66",
+      "revision": "r14"
+    },
+    {
+      "date": "2022-01",
+      "kernel": "5.10.66",
+      "revision": "r11"
+    },
+    {
+      "date": "2022-02",
+      "kernel": "5.10.81",
+      "revision": "r9"
     },
     {
       "date": "2022-03",
@@ -28,14 +53,29 @@
       "revision": "r12"
     },
     {
+      "date": "2022-06",
+      "kernel": "5.10.110",
+      "revision": "r7"
+    },
+    {
       "date": "2022-07",
       "kernel": "5.10.110",
       "revision": "r12"
     },
     {
+      "date": "2022-08",
+      "kernel": "5.10.117",
+      "revision": "r8"
+    },
+    {
       "date": "2022-09",
       "kernel": "5.10.117",
       "revision": "r9"
+    },
+    {
+      "date": "2022-10",
+      "kernel": "5.10.136",
+      "revision": "r13"
     },
     {
       "date": "2022-11",
@@ -68,6 +108,15 @@
       "revision": "r9"
     },
     {
+      "date": "2023-05",
+      "kernel": "5.10.168",
+      "revision": "r8"
+    },
+    {
+      "date": "2023-06",
+      "kernel": "5.10.177"
+    },
+    {
       "date": "2023-07",
       "kernel": "5.10.177",
       "revision": "r8"
@@ -76,6 +125,11 @@
       "date": "2023-09",
       "kernel": "5.10.185",
       "revision": "r3"
+    },
+    {
+      "date": "2023-11",
+      "kernel": "5.10.198",
+      "revision": "r14"
     },
     {
       "date": "2024-01",
@@ -125,7 +179,7 @@
     {
       "date": "2025-12",
       "kernel": "5.10.246",
-      "revision": "r6"
+      "revision": "r7"
     },
     {
       "date": "2026-04",
@@ -139,11 +193,12 @@
     },
     {
       "date": "2026-10",
-      "kernel": "5.10.269"
+      "kernel": "5.10.269",
+      "revision": "r1"
     },
     {
       "date": "lts",
-      "kernel": "5.10.272"
+      "kernel": "5.10.274"
     }
   ]
 }
