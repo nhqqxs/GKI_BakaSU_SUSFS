@@ -727,14 +727,28 @@ jobs:
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           set -euo pipefail
-          F="KernelSU/kernel/feature/selinux_hide.c"
-          if [ ! -f "$F" ]; then
-            echo "::warning::$F 不存在，跳过 fsck_untrusted 特判"
+          # BakaSU 2026-11-16 起把 selinux_hide.c 拆成了
+          #   selinux_hide/{selinux_hide.c, selinux_hide_auto.c, selinux_hide_susfs.c}
+          # 只有 auto 变体（未启用 SUSFS）里才有 "avd.seqno = 1;" 和 avd 计算；
+          # susfs 变体只改返回串里的 seqno，特判得另走内核补丁。
+          F=""
+          for cand in \
+            KernelSU/kernel/feature/selinux_hide/selinux_hide_auto.c \
+            KernelSU/kernel/feature/selinux_hide.c \
+            KernelSU/kernel/feature/selinux_hide/selinux_hide_susfs.c; do
+            if [ -f "$cand" ] && grep -q 'avd.seqno = 1;' "$cand"; then
+              F="$cand"
+              break
+            fi
+          done
+          if [ -z "$F" ]; then
+            echo "::warning::selinux_hide 实现里找不到 'avd.seqno = 1;' 锚点（可能是 SUSFS 变体），跳过 fsck_untrusted 特判"
             exit 0
           fi
+          echo "补丁目标: $F"
           python3 "$GITHUB_WORKSPACE/scripts/patch_selinux_hide.py" "$F"
           grep -n 'zn_fsck_untrusted_guard' "$F" || {
-            echo "::error::fsck_untrusted 特判未能写入 selinux_hide.c"
+            echo "::error::fsck_untrusted 特判未能写入 $F"
             exit 1
           }
 
